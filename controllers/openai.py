@@ -41,6 +41,13 @@ def gpt4o_generate(history, prompt, question):
         messages=messages
     ).choices[0].message.content
 
+async def get_gpt4o_answer(history, prompt, question):
+    try:
+        answer = await asyncio.to_thread(gpt4o_generate, history, prompt, question)
+        return {"model": "GPT-4", "answer": answer, "status": "success"}
+    except Exception as e:
+        return {"model": "GPT-4", "answer": str(e), "status": "failed"}
+
 # Claude (Anthropic)
 def claude_generate(history, prompt, question):
     messages = []
@@ -55,11 +62,18 @@ def claude_generate(history, prompt, question):
         "content": question
     })
     return anthropic_client.messages.create(
-        model="claude-3-haiku-20240307",
+        model="claude-3-5-sonnet-20241022",
         max_tokens=300,
         messages=messages,
         system=prompt
     ).content[0].text
+
+async def get_claude_answer(history, prompt, question):
+    try:
+        answer = await asyncio.to_thread(claude_generate, history, prompt, question)
+        return {"model": "Claude", "answer": answer, "status": "success"}
+    except Exception as e:
+        return {"model": "Claude", "answer": str(e), "status": "failed"}
 
 # Gemini
 def gemini_generate(history, prompt, question):
@@ -73,30 +87,22 @@ def gemini_generate(history, prompt, question):
 
     model = genai.GenerativeModel("gemini-1.5-flash-001")
     chat = model.start_chat(history=messages)
-    print(chat)
     response = chat.send_message(question)
     return response.text
 
-async def get_gpt4o_answer(history, prompt, question):
-    try:
-        answer = gpt4o_generate(history, prompt, question)
-        return {"model": "GPT-4", "answer": answer, "status": "success"}
-    except Exception as e:
-        return {"model": "GPT-4", "answer": str(e), "status": "failed"}
-
-async def get_claude_answer(history, prompt, question):
-    try:
-        answer = claude_generate(history, prompt, question)
-        return {"model": "Claude", "answer": answer, "status": "success"}
-    except Exception as e:
-        return {"model": "Claude", "answer": str(e), "status": "failed"}
-
 async def get_gemini_answer(history, prompt, question):
     try:
-        answer = gemini_generate(history, prompt, question)
+        answer = await asyncio.to_thread(gemini_generate, history, prompt, question)
         return {"model": "Gemini", "answer": answer, "status": "success"}
     except Exception as e:
         return {"model": "Gemini", "answer": str(e), "status": "failed"}
+        
+# def mistral_generate(history, prompt, question):
+#     response = together_client.chat.completions.create(
+#         model="mistralai/Mistral-7B-Instruct-v0.2",
+#         messages=[{"role": "user", "content": question}]
+#     )
+#     return response.choices[0].message.content
 
 def summarize_opinion(responses):
     successful_answers = [res for res in responses if res["status"] == "success"]
@@ -119,6 +125,13 @@ def summarize_opinion(responses):
     )
 
     return response.choices[0].message.content.strip()
+
+async def get_opinion(responses):
+    try:
+        answer = await asyncio.to_thread(summarize_opinion, responses)
+        return answer
+    except Exception as e:
+        raise RuntimeError(f"Summarizing failed: {str(e)}")
 
 def pick_best_answer(responses):
     # Here you can use heuristics or even send all to GPT for ranking
@@ -143,7 +156,14 @@ def pick_best_answer(responses):
 
     return response.choices[0].message.content.strip()
 
-def generate_easy(history, prompt, question):
+async def get_best_answer(responses):
+    try:
+        answer = await asyncio.to_thread(pick_best_answer, responses)
+        return answer
+    except Exception as e:
+        raise RuntimeError(f"Picking best answer failed: {str(e)}")
+
+def generate_answers(history, prompt, question):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
@@ -154,14 +174,29 @@ def generate_easy(history, prompt, question):
     ]
     results = loop.run_until_complete(asyncio.gather(*tasks))
     loop.close()
+    
+    return results
 
+def anaylze_result(results):
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    summarize = loop.run_until_complete(asyncio.gather(
+        get_best_answer(results),
+        get_opinion(results)
+    ))
+    best_answer, opinion = summarize
+    loop.close()
+
+    return best_answer, opinion
+
+def generate_easy(history, prompt, question):
+    results = generate_answers(history, prompt, question)
     status_report = [
-        {key: value for key, value in result.items() if key != 'answer'} 
+        {key: value for key, value in result.items() if key != 'answer'}
         for result in results
     ]
-    # Extract results
-    best_answer = pick_best_answer(results)
-    opinion = summarize_opinion(results)
+    best_answer, opinion = anaylze_result(results)
 
     return {
         "final_answer": best_answer,
