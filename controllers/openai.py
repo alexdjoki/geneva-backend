@@ -269,7 +269,8 @@ def pick_best_answer(responses):
     if len(valid_answers) < 2:
         return valid_answers[0]["answer"] if valid_answers else "No valid answers."
 
-    prompt = "You're given answers from three AI models to the same question. Evaluate which answer is the most helpful, accurate, and complete. Then output only the best answer."
+    prompt = f"""You're given answers from AI models to the same question. Analyze the answers then give only the best answer.
+    Expected output(Model name: answer)"""
 
     content = prompt + "\n\n"
     for i, res in enumerate(valid_answers):
