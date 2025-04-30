@@ -528,7 +528,7 @@ def ask():
         judge_output = judge_system(question)
         result = {}
         level = ''
-        if "2025" in your_string:
+        if "2025" in question:
             result = get_news(question)
             level = 'Last'
         else:
