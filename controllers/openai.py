@@ -5,6 +5,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 from openai import OpenAI
 from together import Together
+from urllib.parse import urlparse
 import anthropic
 import google.generativeai as genai
 import os
@@ -22,8 +23,9 @@ grok_client = OpenAI(api_key=os.getenv('GROK_API_KEY'), base_url="https://api.x.
 MISTRAL_API_KEY = os.getenv('MISTRAL_API_KEY')
 MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
 bing_api_key = os.getenv('BING_API_KEY')
-google_api_key = os.getenv('GOOGLE_API_KEY')
+google_search_api_key = os.getenv('GOOGLE_SEARCH_API_KEY')
 google_cx_id = os.getenv('GOOGLE_CX_ID')
+brave_api_key = os.getenv('BRAVE_API_KEY')
 together_client = Together()
 
 openai_bp = Blueprint('openai', __name__)
@@ -353,14 +355,34 @@ def get_answer(level, history, prompt, question):
         "opinion": opinion
     }
 
+def fetch_brave_news(query):
+    headers = {
+        "Accept": "application/json",
+        "X-Subscription-Token": brave_api_key
+    }
+
+    params = {
+        "q": query,
+        "count": 10  # number of results (max: 20 for free tier)
+    }
+
+    response = requests.get("https://api.search.brave.com/res/v1/web/search", headers=headers, params=params)
+    data = response.json()
+    results = data.get("web", {}).get("results", [])
+
+    return [{
+        "title": r.get("title", ""),
+        "snippet": r.get("description", ""),
+        "source": r.get("source") or urlparse(r.get("url", "")).netloc,
+        "url": r.get("url", "")
+    } for r in results]
+
 def fetch_bing_news(query):
     url = "https://api.bing.microsoft.com/v7.0/news/search"
     headers = {"Ocp-Apim-Subscription-Key": bing_api_key}
     params = {"q": query, "count": 10}
     response = requests.get(url, headers=headers, params=params)
     results = response.json().get('value', [])
-    print('bing')
-    print(results)
     return [{
         "title": r.get("name", ""),
         "snippet": r.get("description", ""),
@@ -371,15 +393,13 @@ def fetch_bing_news(query):
 def fetch_google_pse_news(query):
     url = "https://www.googleapis.com/customsearch/v1"
     params = {
-        "key": google_api_key,
+        "key": google_search_api_key,
         "cx": google_cx_id,
-        "q": f"site:reuters.com OR site:bloomberg.com {query}",
+        "q": f"site:reuters.com OR site:bloomberg.com OR site:wsj.com OR site:cnbc.com {query}",
         "num": 10
     }
     response = requests.get(url, params=params)
     results = response.json().get('items', [])
-    print('google_pse')
-    print(results)
     return [{
         "title": r.get("title", ""),
         "snippet": r.get("snippet", ""),
@@ -403,11 +423,11 @@ def compress_articles(articles, max_tokens=700):
 
 def retrieve_news(query):
     # Fetch from two APIs
-    bing_articles = fetch_bing_news(query)
+    brave_articles = fetch_brave_news(query)
     google_articles = fetch_google_pse_news(query)
 
     # Merge + deduplicate
-    all_articles = bing_articles + google_articles
+    all_articles = google_articles + brave_articles
     seen_urls = set()
     unique_articles = []
     for a in all_articles:
@@ -423,14 +443,41 @@ def retrieve_news(query):
 
     return {
         "query": query,
-        "sources_used": list({a['source'] for a in sorted_articles[:2]}),
+        "sources_used": list({a['source'] for a in sorted_articles[:4]}),
         "compressed_summary": compressed_summary
     }
 
+def get_news(query):
+    result = retrieve_news(query)
+    print('start analyzing news')
+    prompt = f"""
+    Summarize the following search results into a brief report. Highlight the most relevant and recent information for the topic: "{query}"
+
+    Search Results:
+    {result['compressed_summary']}
+    """
+
+    response = client.chat.completions.create(
+        model="gpt-4-turbo",  # or "gpt-4"
+        messages=[
+            {"role": "system", "content": "You are a helpful research assistant that summarizes news search results."},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=1
+    )
+    result = response.choices[0].message.content
+    print("news:", result)
+    return {
+        "final_answer": result,
+        "status_report": [],
+        "opinion": ''
+    }
+
+@openai_bp.route('/retrieve', methods=['POST'])
 def retrieve():
     data = request.get_json()
     question = data.get("question")
-    return fetch_google_pse_news(question)
+    return retrieve_news(question)
 
 def judge_system(question):
     expected_output = """
@@ -440,7 +487,7 @@ def judge_system(question):
         }
     """
     judge_prompt = f"""
-    Classify the difficulty of the following question as Easy, Medium, or Complex. And also check that user want data post-2025 or pre-2025.
+    Classify the difficulty of the following question as Easy, Medium, or Complex. And also determine if the user is asking for information about events or data from this year (i.e., {datetime.now().year}). Respond with "Yes" or "No"
     I want output like this format: {expected_output}
     Question: {question}"""
 
@@ -456,6 +503,13 @@ def judge_system(question):
     judge_output = json.loads(judge_output)
     return judge_output
 
+@openai_bp.route('/judge', methods=['POST'])
+
+def judge():
+    data = request.get_json()
+    question = data.get('question')
+    return judge_system(question)
+
 @openai_bp.route('/ask', methods=['POST'])
 def ask():
     data = request.get_json()
@@ -470,25 +524,20 @@ def ask():
     You are a knowledgeable AI assistant. Your task is to generate a clear, accurate, and helpful answer based solely on your understanding of the topic.
     Please carefully read the question below and provide a detailed response using natural language.
     """
-    expected_output = """
-        {
-            'level': 'Easy'
-            'last_year': 'Yes'
-        }
-    """
-    judge_prompt = f"""
-    Classify the difficulty of the following question as Easy, Medium, or Complex. And also check that user want data post-2025 or pre-2025.
-    I want output like this format:
-    Output: {expected_output}
-    Question: {question}
-    """
     try:
         judge_output = judge_system(question)
-        response = get_answer(judge_output['level'], history, prompt, question)
-        new_history = ChatHistory(user_id = user_id, answer = response["final_answer"], status_report = json.dumps(response["status_report"]), opinion = response["opinion"], chat_id = chat_id, question = question, level = judge_output['level'], created_at = datetime.now(), updated_at = datetime.now())
+        result = {}
+        level = ''
+        if "2025" in your_string:
+            result = get_news(question)
+            level = 'Last'
+        else:
+            result = get_answer(judge_output['level'], history, prompt, question)
+            level = judge_output['level']
+        new_history = ChatHistory(user_id = user_id, answer = result["final_answer"], status_report = json.dumps(result["status_report"]), opinion = result["opinion"], chat_id = chat_id, question = question, level = level, created_at = datetime.now(), updated_at = datetime.now())
         db.session.add(new_history)
         db.session.commit()
-        return jsonify({"question": question, "answer": response["final_answer"], "level": judge_output['level'], "status_report": response["status_report"], "opinion": response["opinion"]})
+        return jsonify({"question": question, "answer": result["final_answer"], "level": level, "status_report": result["status_report"], "opinion": result["opinion"]})
 
     except Exception as e:
         print(e)
