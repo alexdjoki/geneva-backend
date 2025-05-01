@@ -11,7 +11,7 @@ import google.generativeai as genai
 import os
 import requests
 import asyncio
-import json
+import jsonify
 
 load_dotenv()
 
@@ -36,11 +36,11 @@ def gpt4o_generate(history, prompt, question):
                 {"role": "system", "content": prompt},
             ]
             
-    for element in history:
-        if element['type'] == 'question':
-            messages.append({"role": "user", "content": element["text"]})
-        if element['type'] == 'answer':
-            messages.append({"role": "assistant", "content": element["text"]})
+    # for element in history:
+    #     if element['type'] == 'question':
+    #         messages.append({"role": "user", "content": element["text"]})
+    #     if element['type'] == 'answer':
+    #         messages.append({"role": "assistant", "content": element["text"]})
     
     messages.append({
         "role": "user",
@@ -62,11 +62,11 @@ async def get_gpt4o_answer(history, prompt, question):
 # Claude (Anthropic)
 def claude_generate(history, prompt, question):
     messages = []
-    for element in history:
-        if element['type'] == 'question':
-            messages.append({"role": "user", "content": element["text"]})
-        if element['type'] == 'answer':
-            messages.append({"role": "assistant", "content": element["text"]})
+    # for element in history:
+    #     if element['type'] == 'question':
+    #         messages.append({"role": "user", "content": element["text"]})
+    #     if element['type'] == 'answer':
+    #         messages.append({"role": "assistant", "content": element["text"]})
     
     messages.append({
         "role": "user",
@@ -74,7 +74,6 @@ def claude_generate(history, prompt, question):
     })
     return anthropic_client.messages.create(
         model="claude-3-5-sonnet-20241022",
-        max_tokens=300,
         messages=messages,
         system=prompt
     ).content[0].text
@@ -90,11 +89,11 @@ async def get_claude_answer(history, prompt, question):
 def gemini_generate(history, prompt, question):
     # prompt = flatten_messages(messages)
     messages = []
-    for element in history:
-        if element['type'] == 'question':
-            messages.append({"role": "user", "parts": [element["text"]]})
-        if element['type'] == 'answer':
-            messages.append({"role": "model", "parts": [element["text"]]})
+    # for element in history:
+    #     if element['type'] == 'question':
+    #         messages.append({"role": "user", "parts": [element["text"]]})
+    #     if element['type'] == 'answer':
+    #         messages.append({"role": "model", "parts": [element["text"]]})
 
     model = genai.GenerativeModel("gemini-1.5-flash-001")
     chat = model.start_chat(history=messages)
@@ -113,11 +112,11 @@ def deepseek_generate(history, prompt, question):
                 {"role": "system", "content": prompt},
             ]
             
-    for element in history:
-        if element['type'] == 'question':
-            messages.append({"role": "user", "content": element["text"]})
-        if element['type'] == 'answer':
-            messages.append({"role": "assistant", "content": element["text"]})
+    # for element in history:
+    #     if element['type'] == 'question':
+    #         messages.append({"role": "user", "content": element["text"]})
+    #     if element['type'] == 'answer':
+    #         messages.append({"role": "assistant", "content": element["text"]})
     
     messages.append({
         "role": "user",
@@ -141,11 +140,11 @@ def grok_generate(history, prompt, question):
                 {"role": "system", "content": prompt},
             ]
             
-    for element in history:
-        if element['type'] == 'question':
-            messages.append({"role": "user", "content": element["text"]})
-        if element['type'] == 'answer':
-            messages.append({"role": "assistant", "content": element["text"]})
+    # for element in history:
+    #     if element['type'] == 'question':
+    #         messages.append({"role": "user", "content": element["text"]})
+    #     if element['type'] == 'answer':
+    #         messages.append({"role": "assistant", "content": element["text"]})
     
     messages.append({
         "role": "user",
@@ -247,13 +246,12 @@ def summarize_opinion(responses):
     for res in successful_answers:
         content += f"{res['model'].capitalize()} said: {res['answer']}\n\n"
 
-    response = client.chat.completions.create(
-        model="gpt-4-turbo",
+    response = deepseek_client.chat.completions.create(
+        model="deepseek-chat",
         messages=[
             {"role": "system", "content": "You are a helpful assistant who compares AI answers and summarizes consensus or differences."},
             {"role": "user", "content": content}
         ],
-        temperature=0.7
     )
 
     return response.choices[0].message.content.strip()
@@ -277,16 +275,15 @@ def pick_best_answer(responses):
     for i, res in enumerate(valid_answers):
         content += f"Answer:\n{res['answer']}\n\n"
 
-    response = client.chat.completions.create(
-        model="gpt-4-turbo",
+    response = deepseek_client.chat.completions.create(
+        model="deepseek-chat",
         messages=[
             {"role": "system", "content": "You are a critical evaluator of AI-generated responses."},
             {"role": "user", "content": content}
         ],
-        temperature=1 
     )
 
-    return "Consensus: " + response.choices[0].message.content.strip()
+    return "Consensus:\n" + response.choices[0].message.content.strip()
 
 async def get_best_answer(responses):
     try:
@@ -447,32 +444,63 @@ def retrieve_news(query):
         "compressed_summary": compressed_summary
     }
 
-def get_news(query):
+def generate_news(level, history, prompt, question):
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    tasks = []
+    if level == 'Easy':
+        tasks = [
+            get_llama_answer(history, prompt, question),
+            get_deepseek_answer(history, prompt, question),
+            get_grok_answer(history, prompt, question),
+        ]
+    if level == 'Medium':
+        tasks = [
+            get_gemini_answer(history, prompt, question),
+            get_mistral_answer(history, prompt, question),
+            get_llama_answer(history, prompt, question),
+            get_deepseek_answer(history, prompt, question),
+            get_grok_answer(history, prompt, question),
+        ]
+    if level == 'Complex':
+        tasks = [
+            # get_gpt4o_answer(history, prompt, question),
+            get_claude_answer(history, prompt, question),
+            get_gemini_answer(history, prompt, question),
+            get_mistral_answer(history, prompt, question),
+            get_llama_answer(history, prompt, question),
+            get_deepseek_answer(history, prompt, question),
+            get_grok_answer(history, prompt, question),
+        ]
+    results = loop.run_until_complete(asyncio.gather(*tasks))
+    loop.close()
+    
+    return results
+
+def get_news(level, query):
     result = retrieve_news(query)
     print('start analyzing news')
-    prompt = f"""
+    prompt = "You are a helpful research assistant that summarizes news search results."
+    question = f"""
     Summarize the following search results into a brief report. Highlight the most relevant and recent information for the topic: "{query}"
 
     Search Results:
     {result['compressed_summary']}
     """
 
-    response = client.chat.completions.create(
-        model="gpt-4-turbo",  # or "gpt-4"
-        messages=[
-            {"role": "system", "content": "You are a helpful research assistant that summarizes news search results."},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=1
-    )
-    result = response.choices[0].message.content
-    print("news:", result)
-    return {
-        "final_answer": result,
-        "status_report": [],
-        "opinion": ''
-    }
+    results = generate_news(level, [], prompt, question)
+    status_report = [
+        {key: value for key, value in result.items() if key != 'answer'}
+        for result in results
+    ]
+    best_answer, opinion = anaylze_result(results)
 
+    return {
+        "final_answer": best_answer,
+        "status_report": status_report,
+        "opinion": opinion
+    }
+    
 @openai_bp.route('/retrieve', methods=['POST'])
 def retrieve():
     data = request.get_json()
@@ -487,19 +515,31 @@ def judge_system(question):
         }
     """
     judge_prompt = f"""
-    Classify the difficulty of the following question as Easy, Medium, or Complex. And also determine if the user is asking for information about events or data from this year (i.e., {datetime.now().year}). Respond with "Yes" or "No"
-    I want output like this format: {expected_output}
-    Question: {question}"""
+    Classify the difficulty of the following question as Easy, Medium, or Complex. And also determine if the user is asking for information about events or data from this year (i.e., {datetime.now().year}). Respond with "Yes" or "No".
+    I want output like this format: {expected_output}"""
 
-    response = client.chat.completions.create(
-        model="gpt-4-turbo",  # or "gpt-4"
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant that evaluates the difficulty of questions."},
-            {"role": "user", "content": judge_prompt}
-        ],
-        temperature=1
+    messages = [
+        {"role": "system", "content": judge_prompt},
+    ]
+    messages.append({
+        "role": "user",
+        "content": question
+    })
+
+    response = deepseek_client.chat.completions.create(
+        model="deepseek-chat",
+        messages=messages
     )
     judge_output = response.choices[0].message.content
+    index_open_brace = judge_output.find('{')
+    index_open_bracket = judge_output.find('[')
+    first_pos = min(p for p in [index_open_brace, index_open_bracket] if p != -1)
+
+    index_close_brace = judge_output.rfind('}')
+    index_close_bracket = judge_output.rfind(']')
+    last_pos = max(p for p in [index_close_brace, index_close_bracket] if p != -1)
+
+    judge_output = judge_output[first_pos:last_pos + 1]
     judge_output = json.loads(judge_output)
     return judge_output
 
@@ -527,17 +567,14 @@ def ask():
     try:
         judge_output = judge_system(question)
         result = {}
-        level = ''
-        if "2025" in question:
-            result = get_news(question)
-            level = 'Last'
+        if judge_output['last_year'] == 'Yes':
+            result = get_news(judge_output['level'], question)
         else:
             result = get_answer(judge_output['level'], history, prompt, question)
-            level = judge_output['level']
-        new_history = ChatHistory(user_id = user_id, answer = result["final_answer"], status_report = json.dumps(result["status_report"]), opinion = result["opinion"], chat_id = chat_id, question = question, level = level, created_at = datetime.now(), updated_at = datetime.now())
+        new_history = ChatHistory(user_id = user_id, answer = result["final_answer"], status_report = json.dumps(result["status_report"]), opinion = result["opinion"], chat_id = chat_id, question = question, level = judge_output['level'], created_at = datetime.now(), updated_at = datetime.now())
         db.session.add(new_history)
         db.session.commit()
-        return jsonify({"question": question, "answer": result["final_answer"], "level": level, "status_report": result["status_report"], "opinion": result["opinion"]})
+        return jsonify({"question": question, "answer": result["final_answer"], "level": judge_output['level'], "status_report": result["status_report"], "opinion": result["opinion"]})
 
     except Exception as e:
         print(e)
