@@ -11,7 +11,6 @@ import google.generativeai as genai
 import os
 import requests
 import asyncio
-import jsonify
 
 load_dotenv()
 
