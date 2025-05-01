@@ -11,6 +11,7 @@ import google.generativeai as genai
 import os
 import requests
 import asyncio
+import json
 
 load_dotenv()
 
@@ -52,8 +53,10 @@ def gpt4o_generate(history, prompt, question):
     ).choices[0].message.content
 
 async def get_gpt4o_answer(history, prompt, question):
+    print('start gpt')
     try:
         answer = await asyncio.to_thread(gpt4o_generate, history, prompt, question)
+        print('end gpt')
         return {"model": "GPT-4", "answer": answer, "status": "success"}
     except Exception as e:
         return {"model": "GPT-4", "answer": str(e), "status": "failed"}
@@ -78,8 +81,10 @@ def claude_generate(history, prompt, question):
     ).content[0].text
 
 async def get_claude_answer(history, prompt, question):
+    print('start claude')
     try:
         answer = await asyncio.to_thread(claude_generate, history, prompt, question)
+        print('end claude')
         return {"model": "Claude", "answer": answer, "status": "success"}
     except Exception as e:
         return {"model": "Claude", "answer": str(e), "status": "failed"}
@@ -100,8 +105,10 @@ def gemini_generate(history, prompt, question):
     return response.text
 
 async def get_gemini_answer(history, prompt, question):
+    print('start gemini')
     try:
         answer = await asyncio.to_thread(gemini_generate, history, prompt, question)
+        print('end gemini')
         return {"model": "Gemini", "answer": answer, "status": "success"}
     except Exception as e:
         return {"model": "Gemini", "answer": str(e), "status": "failed"}
@@ -128,8 +135,10 @@ def deepseek_generate(history, prompt, question):
     ).choices[0].message.content
 
 async def get_deepseek_answer(history, prompt, question):
+    print('start deepseek')
     try:
         answer = await asyncio.to_thread(deepseek_generate, history, prompt, question)
+        print('end deepseek')
         return {"model": "DeepSeek", "answer": answer, "status": "success"}
     except Exception as e:
         return {"model": "DeepSeek", "answer": str(e), "status": "failed"}
@@ -156,8 +165,10 @@ def grok_generate(history, prompt, question):
     ).choices[0].message.content
 
 async def get_grok_answer(history, prompt, question):
+    print('start grok')
     try:
         answer = await asyncio.to_thread(grok_generate, history, prompt, question)
+        print('end grok')
         return {"model": "Grok", "answer": answer, "status": "success"}
     except Exception as e:
         return {"model": "Grok", "answer": str(e), "status": "failed"}
@@ -185,37 +196,10 @@ def mistral_generate(history, prompt, question):
         return response.text
 
 async def get_mistral_answer(history, prompt, question):
+    print('start mistral')
     try:
         answer = await asyncio.to_thread(mistral_generate, history, prompt, question)
-        return {"model": "Mistral", "answer": answer, "status": "success"}
-    except Exception as e:
-        return {"model": "Mistral", "answer": str(e), "status": "failed"}
-        
-def mistral_generate(history, prompt, question):
-    payload = {
-        "model": "mistral-large-2411",
-        "messages": [
-            {"role": "user", "content": question}
-        ],
-        "temperature": 0.7
-    }
-
-    headers = {
-        "Authorization": f"Bearer {MISTRAL_API_KEY}",
-        "Content-Type": "application/json"
-    }
-
-    response = requests.post(MISTRAL_API_URL, json=payload, headers=headers)
-
-    if response.status_code == 200:
-        result = response.json()
-        return result["choices"][0]["message"]["content"]
-    else:
-        return response.text
-
-async def get_mistral_answer(history, prompt, question):
-    try:
-        answer = await asyncio.to_thread(mistral_generate, history, prompt, question)
+        print('end mistral')
         return {"model": "Mistral", "answer": answer, "status": "success"}
     except Exception as e:
         return {"model": "Mistral", "answer": str(e), "status": "failed"}
@@ -228,8 +212,10 @@ def llama_generate(history, prompt, question):
     return response.choices[0].message.content
 
 async def get_llama_answer(history, prompt, question):
+    print('start llama')
     try:
         answer = await asyncio.to_thread(llama_generate, history, prompt, question)
+        print('end llama')
         return {"model": "Llama 4", "answer": answer, "status": "success"}
     except Exception as e:
         return {"model": "Llama 4", "answer": str(e), "status": "failed"}
