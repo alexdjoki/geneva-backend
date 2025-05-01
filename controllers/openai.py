@@ -464,7 +464,7 @@ def generate_news(level, history, prompt, question):
         ]
     if level == 'Complex':
         tasks = [
-            # get_gpt4o_answer(history, prompt, question),
+            get_gpt4o_answer(history, prompt, question),
             get_claude_answer(history, prompt, question),
             get_gemini_answer(history, prompt, question),
             get_mistral_answer(history, prompt, question),
