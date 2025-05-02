@@ -74,11 +74,30 @@ def claude_generate(history, prompt, question):
         "role": "user",
         "content": question
     })
-    return anthropic_client.messages.create(
-        model="claude-3-5-sonnet-20241022",
-        messages=messages,
-        system=prompt
-    ).content[0].text
+
+    full_response = ""
+    stop_reason = None
+
+    while True:
+        response = anthropic_client.messages.create(
+            model='claude-3-5-sonnet-20241022',
+            max_tokens=1024,
+            messages=messages
+        )
+
+        chunk_text = response.content[0].text
+        stop_reason = response.stop_reason
+
+        full_response += chunk_text
+
+        if stop_reason != "max_tokens":
+            break
+
+        # Append current response to context and ask it to continue
+        messages.append({"role": "assistant", "content": chunk_text})
+        messages.append({"role": "user", "content": "Please continue."})
+
+    return full_response
 
 async def get_claude_answer(history, prompt, question):
     print('start claude')
@@ -87,6 +106,7 @@ async def get_claude_answer(history, prompt, question):
         print('end claude')
         return {"model": "Claude", "answer": answer, "status": "success"}
     except Exception as e:
+        print(str(e))
         return {"model": "Claude", "answer": str(e), "status": "failed"}
 
 # Gemini
@@ -467,7 +487,7 @@ def get_news(level, query):
     print('start analyzing news')
     prompt = "You are a helpful research assistant that summarizes news search results."
     question = f"""
-    Summarize the following search results into a brief report. Highlight the most relevant and recent information for the topic: "{query}"
+    Summarize the following search results into a brief report. Highlight the most relevant and recent information for the topic from the Search Results: "{query}"
 
     Search Results:
     {result['compressed_summary']}
