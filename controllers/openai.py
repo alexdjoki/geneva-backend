@@ -57,9 +57,9 @@ async def get_gpt4o_answer(history, prompt, question):
     try:
         answer = await asyncio.to_thread(gpt4o_generate, history, prompt, question)
         print('end gpt')
-        return {"model": "GPT-4", "answer": answer, "status": "success"}
+        return {"model": "GPT-4.1", "answer": answer, "status": "success"}
     except Exception as e:
-        return {"model": "GPT-4", "answer": str(e), "status": "failed"}
+        return {"model": "GPT-4.1", "answer": str(e), "status": "failed"}
 
 # Claude (Anthropic)
 def claude_generate(history, prompt, question):
@@ -104,10 +104,10 @@ async def get_claude_answer(history, prompt, question):
     try:
         answer = await asyncio.to_thread(claude_generate, history, prompt, question)
         print('end claude')
-        return {"model": "Claude", "answer": answer, "status": "success"}
+        return {"model": "Claude Sonnet 3.7", "answer": answer, "status": "success"}
     except Exception as e:
         print(str(e))
-        return {"model": "Claude", "answer": str(e), "status": "failed"}
+        return {"model": "Claude Sonnet 3.7", "answer": str(e), "status": "failed"}
 
 # Gemini
 def gemini_generate(history, prompt, question):
@@ -129,9 +129,9 @@ async def get_gemini_answer(history, prompt, question):
     try:
         answer = await asyncio.to_thread(gemini_generate, history, prompt, question)
         print('end gemini')
-        return {"model": "Gemini", "answer": answer, "status": "success"}
+        return {"model": "Gemini 2.5 Pro", "answer": answer, "status": "success"}
     except Exception as e:
-        return {"model": "Gemini", "answer": str(e), "status": "failed"}
+        return {"model": "Gemini 2.5 Pro", "answer": str(e), "status": "failed"}
 
 def deepseek_generate(history, prompt, question):
     messages = [
@@ -159,9 +159,9 @@ async def get_deepseek_answer(history, prompt, question):
     try:
         answer = await asyncio.to_thread(deepseek_generate, history, prompt, question)
         print('end deepseek')
-        return {"model": "DeepSeek", "answer": answer, "status": "success"}
+        return {"model": "DeepSeek V3", "answer": answer, "status": "success"}
     except Exception as e:
-        return {"model": "DeepSeek", "answer": str(e), "status": "failed"}
+        return {"model": "DeepSeek V3", "answer": str(e), "status": "failed"}
 
 def grok_generate(history, prompt, question):
     messages = [
@@ -189,9 +189,9 @@ async def get_grok_answer(history, prompt, question):
     try:
         answer = await asyncio.to_thread(grok_generate, history, prompt, question)
         print('end grok')
-        return {"model": "Grok", "answer": answer, "status": "success"}
+        return {"model": "Grok 3 Fast", "answer": answer, "status": "success"}
     except Exception as e:
-        return {"model": "Grok", "answer": str(e), "status": "failed"}
+        return {"model": "Grok 3 Fast", "answer": str(e), "status": "failed"}
 
 def mistral_generate(history, prompt, question):
     payload = {
@@ -220,9 +220,9 @@ async def get_mistral_answer(history, prompt, question):
     try:
         answer = await asyncio.to_thread(mistral_generate, history, prompt, question)
         print('end mistral')
-        return {"model": "Mistral", "answer": answer, "status": "success"}
+        return {"model": "Mistral Large", "answer": answer, "status": "success"}
     except Exception as e:
-        return {"model": "Mistral", "answer": str(e), "status": "failed"}
+        return {"model": "Mistral Large", "answer": str(e), "status": "failed"}
 
 def llama_generate(history, prompt, question):
     response = together_client.chat.completions.create(
@@ -517,10 +517,12 @@ def judge_system(question):
         {
             "level": "Easy"
             "last_year": "Yes"
+            "product": "Men's shoes"
         }
     """
     judge_prompt = f"""
-    Classify the difficulty of the following question as Easy, Medium, or Complex. And also determine if the user is asking for information about events or data from this year (i.e., {datetime.now().year}). Respond with "Yes" or "No".
+    Classify the difficulty of the following question as Easy, Medium, or Complex. And determine if the user is asking for information about events or data from this year (i.e., {datetime.now().year}). Respond with "Yes" or "No".
+    And also check if user is looking for product.
     I want output like this format: {expected_output}"""
 
     messages = [
