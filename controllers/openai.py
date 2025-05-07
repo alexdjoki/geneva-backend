@@ -576,7 +576,16 @@ def ask():
     try:
         judge_output = judge_system(question)
         result = {}
-        if judge_output['last_year'] == 'Yes':
+        products = []
+        if judge_output['product'] != 'No':
+            products = search_product(question)
+            judge_output['level'] = 'product'
+            result = {
+                "final_answer": json.dumps(products),
+                "status_report": [],
+                "opinion": '',
+            }
+        elif judge_output['last_year'] == 'Yes':
             result = get_news(judge_output['level'], question)
         else:
             result = get_answer(judge_output['level'], history, prompt, question)
@@ -627,17 +636,15 @@ def extract_info(query):
     result = json.loads(result)
     return result
 
-@openai_bp.route('/product', methods=['POST'])
-
-def product():
-    data = request.get_json()
-    query = data.get('query')
-    user_id = data.get("user_id")
+def search_product(query):
     info = extract_info(query)
     search_term = info['search_term']
-    if info.get('color') is not None:
+    print(info)
+    if not search_term:
+        search_term = info['category_id']
+    if info.get('color'):
         search_term += f""", color is {info.get('color')}"""
-    if info.get('size') is not None:
+    if info.get('size'):
         search_term += f""", size is {info.get('size')}"""
     search_params = {
         "api_key": rainforest_api_key,
@@ -652,7 +659,6 @@ def product():
         search_params["min_price"] = info['min_price']
     if info.get('max_price') is not None :
         search_params["max_price"] = info['max_price']
-    print(search_params)
 
     response = requests.get('https://api.rainforestapi.com/request', params=search_params)
     results = response.json()
@@ -664,8 +670,23 @@ def product():
         "url": r.get("link", "")
     } for r in results]
 
-    new_history = ProductHistory(user_id = user_id, search = query, products = json.dumps(products), created_at = datetime.now(), updated_at = datetime.now())
-    db.session.add(new_history)
-    db.session.commit()
+    return products
 
-    return jsonify({'products': products, 'id': new_history.id})
+@openai_bp.route('/product', methods=['POST'])
+
+def product():
+    data = request.get_json()
+    query = data.get('query')
+    user_id = data.get("user_id")
+    query_type = data.get("type")
+    
+    products = search_product(query)
+
+    if query_type == 'search':
+        new_history = ProductHistory(user_id = user_id, search = query, products = json.dumps(products), created_at = datetime.now(), updated_at = datetime.now())
+        db.session.add(new_history)
+        db.session.commit()
+
+        return jsonify({'products': products, 'id': new_history.id})
+    
+    return jsonify({'products': products, 'id': 0})
