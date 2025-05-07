@@ -7,7 +7,6 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from together import Together
 from urllib.parse import urlparse
-from serpapi.google_search import GoogleSearch
 import anthropic
 import google.generativeai as genai
 import os
@@ -664,7 +663,7 @@ def product():
         "price": r.get("price", {}).get("raw", ""),
         "url": r.get("link", "")
     } for r in results]
-    
+
     new_history = ProductHistory(user_id = user_id, search = query, products = json.dumps(products), created_at = datetime.now(), updated_at = datetime.now())
     db.session.add(new_history)
     db.session.commit()
