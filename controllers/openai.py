@@ -1,11 +1,13 @@
 from flask import Blueprint, request, jsonify
 from models.chat_history import ChatHistory
+from models.product_history import ProductHistory
 from app import db
 from datetime import datetime
 from dotenv import load_dotenv
 from openai import OpenAI
 from together import Together
 from urllib.parse import urlparse
+from serpapi.google_search import GoogleSearch
 import anthropic
 import google.generativeai as genai
 import os
@@ -26,6 +28,7 @@ bing_api_key = os.getenv('BING_API_KEY')
 google_search_api_key = os.getenv('GOOGLE_SEARCH_API_KEY')
 google_cx_id = os.getenv('GOOGLE_CX_ID')
 brave_api_key = os.getenv('BRAVE_API_KEY')
+rainforest_api_key = os.getenv('RAINFOREST_API_KEY')
 together_client = Together()
 
 openai_bp = Blueprint('openai', __name__)
@@ -586,3 +589,84 @@ def ask():
     except Exception as e:
         print(e)
         return jsonify({"error": str(e)}), 500
+
+def extract_info(query):
+    prompt = f"""
+    Extract the following information from the user's query:
+
+    - category_id (must need)
+    - search_term (general item or keyword being looked for. must need)
+    - color
+    - size
+    - min_price
+    - max_price
+
+    Return it as JSON.
+    """
+    messages = [
+        {"role": "system", "content": prompt},
+    ]
+    messages.append({
+        "role": "user",
+        "content": query
+    })
+    response = deepseek_client.chat.completions.create(
+        model="deepseek-chat",
+        messages=messages
+    )
+
+    result = response.choices[0].message.content
+    index_open_brace = result.find('{')
+    index_open_bracket = result.find('[')
+    first_pos = min(p for p in [index_open_brace, index_open_bracket] if p != -1)
+
+    index_close_brace = result.rfind('}')
+    index_close_bracket = result.rfind(']')
+    last_pos = max(p for p in [index_close_brace, index_close_bracket] if p != -1)
+
+    result = result[first_pos:last_pos + 1]
+    result = json.loads(result)
+    return result
+
+@openai_bp.route('/product', methods=['POST'])
+
+def product():
+    data = request.get_json()
+    query = data.get('query')
+    user_id = data.get("user_id")
+    info = extract_info(query)
+    search_term = info['search_term']
+    if info.get('color') is not None:
+        search_term += f""", color is {info.get('color')}"""
+    if info.get('size') is not None:
+        search_term += f""", size is {info.get('size')}"""
+    search_params = {
+        "api_key": rainforest_api_key,
+        "type": "search",
+        "amazon_domain": "amazon.com",
+        "search_term": search_term,
+        "category_id": info['category_id'],
+        "sort_by": "price_low_to_high"
+    }
+    
+    if info.get('min_price') is not None :
+        search_params["min_price"] = info['min_price']
+    if info.get('max_price') is not None :
+        search_params["max_price"] = info['max_price']
+    print(search_params)
+
+    response = requests.get('https://api.rainforestapi.com/request', params=search_params)
+    results = response.json()
+    results = results.get('search_results', [])
+
+    products = [{
+        "image": r.get("image", ""),
+        "price": r.get("price", {}).get("raw", ""),
+        "url": r.get("link", "")
+    } for r in results]
+    
+    new_history = ProductHistory(user_id = user_id, search = query, products = json.dumps(products), created_at = datetime.now(), updated_at = datetime.now())
+    db.session.add(new_history)
+    db.session.commit()
+
+    return jsonify({'products': products, 'id': new_history.id})

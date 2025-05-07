@@ -21,4 +21,7 @@ def create_app():
 
     from controllers.chat_history import chat_history_bp
     app.register_blueprint(chat_history_bp, url_prefix='/chat-history')
+
+    from controllers.product_history import product_history_bp
+    app.register_blueprint(product_history_bp, url_prefix='/product-history')
     return app
