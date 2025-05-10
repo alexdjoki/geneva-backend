@@ -38,11 +38,11 @@ def gpt4o_generate(history, prompt, question):
                 {"role": "system", "content": prompt},
             ]
             
-    # for element in history:
-    #     if element['type'] == 'question':
-    #         messages.append({"role": "user", "content": element["text"]})
-    #     if element['type'] == 'answer':
-    #         messages.append({"role": "assistant", "content": element["text"]})
+    for element in history:
+        if element['type'] == 'question':
+            messages.append({"role": "user", "content": element["text"]})
+        if element['type'] == 'answer':
+            messages.append({"role": "assistant", "content": element["text"]})
     
     messages.append({
         "role": "user",
@@ -66,11 +66,11 @@ async def get_gpt4o_answer(history, prompt, question):
 # Claude (Anthropic)
 def claude_generate(history, prompt, question):
     messages = []
-    # for element in history:
-    #     if element['type'] == 'question':
-    #         messages.append({"role": "user", "content": element["text"]})
-    #     if element['type'] == 'answer':
-    #         messages.append({"role": "assistant", "content": element["text"]})
+    for element in history:
+        if element['type'] == 'question':
+            messages.append({"role": "user", "content": element["text"]})
+        if element['type'] == 'answer':
+            messages.append({"role": "assistant", "content": element["text"]})
     
     messages.append({
         "role": "user",
@@ -115,11 +115,11 @@ async def get_claude_answer(history, prompt, question):
 def gemini_generate(history, prompt, question):
     # prompt = flatten_messages(messages)
     messages = []
-    # for element in history:
-    #     if element['type'] == 'question':
-    #         messages.append({"role": "user", "parts": [element["text"]]})
-    #     if element['type'] == 'answer':
-    #         messages.append({"role": "model", "parts": [element["text"]]})
+    for element in history:
+        if element['type'] == 'question':
+            messages.append({"role": "user", "parts": [element["text"]]})
+        if element['type'] == 'answer':
+            messages.append({"role": "model", "parts": [element["text"]]})
 
     model = genai.GenerativeModel("gemini-1.5-flash-001")
     chat = model.start_chat(history=messages)
@@ -140,11 +140,11 @@ def deepseek_generate(history, prompt, question):
                 {"role": "system", "content": prompt},
             ]
             
-    # for element in history:
-    #     if element['type'] == 'question':
-    #         messages.append({"role": "user", "content": element["text"]})
-    #     if element['type'] == 'answer':
-    #         messages.append({"role": "assistant", "content": element["text"]})
+    for element in history:
+        if element['type'] == 'question':
+            messages.append({"role": "user", "content": element["text"]})
+        if element['type'] == 'answer':
+            messages.append({"role": "assistant", "content": element["text"]})
     
     messages.append({
         "role": "user",
@@ -170,11 +170,11 @@ def grok_generate(history, prompt, question):
                 {"role": "system", "content": prompt},
             ]
             
-    # for element in history:
-    #     if element['type'] == 'question':
-    #         messages.append({"role": "user", "content": element["text"]})
-    #     if element['type'] == 'answer':
-    #         messages.append({"role": "assistant", "content": element["text"]})
+    for element in history:
+        if element['type'] == 'question':
+            messages.append({"role": "user", "content": element["text"]})
+        if element['type'] == 'answer':
+            messages.append({"role": "assistant", "content": element["text"]})
     
     messages.append({
         "role": "user",
