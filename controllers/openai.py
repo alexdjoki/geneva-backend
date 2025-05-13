@@ -32,6 +32,12 @@ together_client = Together()
 
 openai_bp = Blueprint('openai', __name__)
 
+def to_float(val):
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return None
+
 # GPT-4o (OpenAI)
 def gpt4o_generate(history, prompt, question):
     messages = [
@@ -600,16 +606,21 @@ def ask():
 
 def extract_info(query):
     prompt = f"""
-    Extract the following information from the user's query:
+    You are a product categorization assistant. Your job is to extract the most relevant Amazon category and category_id for a given product search query.
 
-    - category_id (must need)
-    - search_term (general item or keyword being looked for. must need)
-    - color
-    - size
-    - min_price
-    - max_price
+    Query: "{query}"
 
-    Return it as JSON.
+    Return your answer in the following format:
+    
+    "search_term": "<cleaned version of query>",
+    "category": "<best-matching Amazon category name>",
+    "category_id": "<corresponding category ID>",
+    "color": "<color mentioned in query>",
+    "size": "<size mentioned in query>",
+    "min_price": "<min price of user want>",
+    "max_price": "<max price of user want>"
+
+    Be as precise as possible. If it's an exact model name, prioritize specific categories (e.g. Electronics > Headphones > In-Ear Headphones). If you're unsure of the category_id, still return the best guess for category.
     """
     messages = [
         {"role": "system", "content": prompt},
@@ -654,21 +665,27 @@ def search_product(query):
         "category_id": info['category_id'],
         "sort_by": "price_low_to_high"
     }
-    
-    if info.get('min_price') is not None :
-        search_params["min_price"] = info['min_price']
-    if info.get('max_price') is not None :
-        search_params["max_price"] = info['max_price']
 
     response = requests.get('https://api.rainforestapi.com/request', params=search_params)
     results = response.json()
     results = results.get('search_results', [])
 
-    products = [{
-        "image": r.get("image", ""),
-        "price": r.get("price", {}).get("raw", ""),
-        "url": r.get("link", "")
-    } for r in results]
+    min_price = to_float(info.get('min_price'))
+    max_price = to_float(info.get('max_price'))
+
+    products = [
+        {
+            "image": r.get("image", ""),
+            "price": r.get("price", {}).get("raw", ""),
+            "url": r.get("link", "")
+        }
+        for r in results
+        if isinstance(r.get("price", {}).get("value", None), (int, float))
+        and (
+            (min_price is None or r["price"]["value"] >= min_price) and
+            (max_price is None or r["price"]["value"] <= max_price)
+        )
+    ]
 
     return products
 
