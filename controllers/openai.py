@@ -663,7 +663,7 @@ def search_product(query):
         "amazon_domain": "amazon.com",
         "search_term": search_term,
         "category_id": info['category_id'],
-        "sort_by": "price_low_to_high"
+        "sort_by": "featured"
     }
 
     response = requests.get('https://api.rainforestapi.com/request', params=search_params)
@@ -677,7 +677,8 @@ def search_product(query):
         {
             "image": r.get("image", ""),
             "price": r.get("price", {}).get("raw", ""),
-            "url": r.get("link", "")
+            "url": r.get("link", ""),
+            "value": r.get("price", {}).get("value", "")
         }
         for r in results
         if isinstance(r.get("price", {}).get("value", None), (int, float))
@@ -685,9 +686,11 @@ def search_product(query):
             (min_price is None or r["price"]["value"] >= min_price) and
             (max_price is None or r["price"]["value"] <= max_price)
         )
-    ]
+    ][:6]
 
-    return products
+    sorted_products = sorted(products, key=lambda x: x['value'], reverse=True)
+
+    return sorted_products
 
 @openai_bp.route('/product', methods=['POST'])
 
