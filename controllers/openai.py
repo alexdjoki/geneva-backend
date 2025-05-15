@@ -584,7 +584,7 @@ def ask():
         result = {}
         products = []
         if judge_output['product'] != 'No':
-            products = search_product(question)
+            products = search_product(question, 'search')
             judge_output['level'] = 'product'
             result = {
                 "final_answer": json.dumps(products),
@@ -647,7 +647,7 @@ def extract_info(query):
     result = json.loads(result)
     return result
 
-def search_product(query):
+def search_product(query, query_type):
     info = extract_info(query)
     search_term = info['search_term']
     print(info)
@@ -686,11 +686,12 @@ def search_product(query):
             (min_price is None or r["price"]["value"] >= min_price) and
             (max_price is None or r["price"]["value"] <= max_price)
         )
-    ][:6]
+    ]
 
-    sorted_products = sorted(products, key=lambda x: x['value'], reverse=True)
+    if query_type == 'search':
+        products = products[:6]
 
-    return sorted_products
+    return products 
 
 @openai_bp.route('/product', methods=['POST'])
 
@@ -700,7 +701,7 @@ def product():
     user_id = data.get("user_id")
     query_type = data.get("type")
     
-    products = search_product(query)
+    products = search_product(query, query_type)
 
     if query_type == 'search':
         new_history = ProductHistory(user_id = user_id, search = query, products = json.dumps(products), created_at = datetime.now(), updated_at = datetime.now())
