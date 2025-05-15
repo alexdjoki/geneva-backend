@@ -529,9 +529,14 @@ def judge_system(question):
         }
     """
     judge_prompt = f"""
-    Classify the difficulty of the following question as Easy, Medium, or Complex. And determine if the user is asking for information about events or data from this year (i.e., {datetime.now().year}). Respond with "Yes" or "No".
-    And also check if user is looking for product.
-    I want output like this format: {expected_output}"""
+    Classify the difficulty of the following question as Easy, Medium, or Complex.
+
+    Determine if the user is asking about events, data, or prices from this year (i.e., {datetime.now().year}). Respond with "Yes" or "No".
+
+    Also, determine if the user is looking for a **buyable product** such as clothing, electronics, tools, or consumer goods — not platforms, services, websites, or companies.
+
+    I want the output in this exact JSON format: {expected_output}
+    """
 
     messages = [
         {"role": "system", "content": judge_prompt},
@@ -584,8 +589,9 @@ def ask():
         result = {}
         products = []
         if judge_output['product'] != 'No':
-            products = search_product(question, 'search')
-            judge_output['level'] = 'product'
+            products, is_specific_model = search_product(question)
+            print(is_specific_model)
+            judge_output['level'] = "specific_product" if is_specific_model.lower() == "yes" else "general_product"
             result = {
                 "final_answer": json.dumps(products),
                 "status_report": [],
@@ -608,19 +614,22 @@ def extract_info(query):
     prompt = f"""
     You are a product categorization assistant. Your job is to extract the most relevant Amazon category and category_id for a given product search query.
 
+    Also identify whether the query refers to a specific product model (e.g., "Anker Soundcore Liberty 4 NC") or a general product category (e.g., "men's shoes", "laptops").
+
     Query: "{query}"
 
-    Return your answer in the following format:
-    
+    Return your answer in the following JSON format:
+
     "search_term": "<cleaned version of query>",
     "category": "<best-matching Amazon category name>",
     "category_id": "<corresponding category ID>",
     "color": "<color mentioned in query>",
     "size": "<size mentioned in query>",
-    "min_price": "<min price of user want>",
-    "max_price": "<max price of user want>"
+    "min_price": "<min price user wants, if specified>",
+    "max_price": "<max price user wants, if specified>",
+    "is_specific_model": "<Yes or No>"
 
-    Be as precise as possible. If it's an exact model name, prioritize specific categories (e.g. Electronics > Headphones > In-Ear Headphones). If you're unsure of the category_id, still return the best guess for category.
+    Be as precise as possible. If it's an exact model name, prioritize specific categories (e.g., Electronics > Headphones > In-Ear Headphones). If you're unsure of the category_id, still return the best guess for category.
     """
     messages = [
         {"role": "system", "content": prompt},
@@ -647,7 +656,7 @@ def extract_info(query):
     result = json.loads(result)
     return result
 
-def search_product(query, query_type):
+def search_product(query):
     info = extract_info(query)
     search_term = info['search_term']
     print(info)
@@ -688,10 +697,10 @@ def search_product(query, query_type):
         )
     ]
 
-    if query_type == 'search':
-        products = products[:6]
+    if info['is_specific_model'].lower() == "yes":
+        products = products[:7]
 
-    return products 
+    return products, info['is_specific_model']
 
 @openai_bp.route('/product', methods=['POST'])
 
@@ -701,13 +710,14 @@ def product():
     user_id = data.get("user_id")
     query_type = data.get("type")
     
-    products = search_product(query, query_type)
+    products, is_specific_model = search_product(query)
+    product_type = "specific" if is_specific_model.lower() == "yes" else "general"
 
     if query_type == 'search':
-        new_history = ProductHistory(user_id = user_id, search = query, products = json.dumps(products), created_at = datetime.now(), updated_at = datetime.now())
+        new_history = ProductHistory(user_id = user_id, search = query, products = json.dumps(products), product_type = product_type, created_at = datetime.now(), updated_at = datetime.now())
         db.session.add(new_history)
         db.session.commit()
 
         return jsonify({'products': products, 'id': new_history.id})
     
-    return jsonify({'products': products, 'id': 0})
+    return jsonify({'products': products, 'id': 0, 'product_type': product_type})
