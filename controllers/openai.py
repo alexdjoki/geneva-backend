@@ -718,6 +718,6 @@ def product():
         db.session.add(new_history)
         db.session.commit()
 
-        return jsonify({'products': products, 'id': new_history.id})
+        return jsonify({'products': products, 'id': new_history.id, 'product_type': product_type})
     
     return jsonify({'products': products, 'id': 0, 'product_type': product_type})
