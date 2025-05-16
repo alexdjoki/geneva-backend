@@ -256,9 +256,11 @@ def summarize_opinion(responses):
     summary_prompt = """Given the answers from different AI models, provide a structured comparison including:
 
     Key points of agreement
-    Notable differences
-    Any unique insights provided by individual models
 
+    Notable differences
+
+    Any unique insights provided by individual models
+    
     Present the output in a clear and organized format using bullet points or numbered sections."""
 
     content = summary_prompt + "\n\n"
@@ -471,7 +473,7 @@ def generate_news(level, history, prompt, question):
         tasks = [
             get_llama_answer(history, prompt, question),
             get_deepseek_answer(history, prompt, question),
-            get_grok_answer(history, prompt, question),
+            get_mistral_answer(history, prompt, question),
         ]
     if level == 'Medium':
         tasks = [
@@ -479,7 +481,7 @@ def generate_news(level, history, prompt, question):
             get_mistral_answer(history, prompt, question),
             get_llama_answer(history, prompt, question),
             get_deepseek_answer(history, prompt, question),
-            get_grok_answer(history, prompt, question),
+            get_gpt4o_answer(history, prompt, question),
         ]
     if level == 'Complex':
         tasks = [
@@ -537,7 +539,7 @@ def judge_system(question):
     judge_prompt = f"""
     Classify the difficulty of the following question as Easy, Medium, or Complex.
 
-    Determine if the user is asking about events, data, or prices from this year (i.e., {datetime.now().year}). Respond with "Yes" or "No".
+    Determine if the user is asking about events, data, or prices from this year (i.e., {datetime.now().year}) or recent data. Respond with "Yes" or "No".
 
     Also, determine if the user is looking for a **buyable product** such as clothing, electronics, tools, or consumer goods — not platforms, services, websites, or companies.
 
@@ -556,6 +558,7 @@ def judge_system(question):
         model="deepseek-chat",
         messages=messages
     )
+    
     judge_output = response.choices[0].message.content
     index_open_brace = judge_output.find('{')
     index_open_bracket = judge_output.find('[')
