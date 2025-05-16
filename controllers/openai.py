@@ -127,7 +127,7 @@ def gemini_generate(history, prompt, question):
         if element['type'] == 'answer':
             messages.append({"role": "model", "parts": [element["text"]]})
 
-    model = genai.GenerativeModel("gemini-1.5-flash-001")
+    model = genai.GenerativeModel("gemini-2.5-pro-preview-05-06")
     chat = model.start_chat(history=messages)
     response = chat.send_message(question)
     return response.text
@@ -203,7 +203,7 @@ async def get_grok_answer(history, prompt, question):
 
 def mistral_generate(history, prompt, question):
     payload = {
-        "model": "mistral-large-2411",
+        "model": "mistral-large-latest",
         "messages": [
             {"role": "user", "content": question}
         ],
@@ -253,7 +253,13 @@ def summarize_opinion(responses):
     if not successful_answers:
         return "All models failed to answer."
 
-    summary_prompt = "Given the answers from different AI models, summarize the key points of agreement or notable differences among them in a concise paragraph."
+    summary_prompt = """Given the answers from different AI models, provide a structured comparison including:
+
+    Key points of agreement
+    Notable differences
+    Any unique insights provided by individual models
+
+    Present the output in a clear and organized format using bullet points or numbered sections."""
 
     content = summary_prompt + "\n\n"
     for res in successful_answers:
@@ -582,7 +588,16 @@ def ask():
 
     prompt = f"""
     You are a knowledgeable AI assistant. Your task is to generate a clear, accurate, and helpful answer based solely on your understanding of the topic.
+
     Please carefully read the question below and provide a detailed response using natural language.
+
+    If the question involves comparing multiple products, technologies, or concepts, make sure to:
+    - Identify all items being compared.
+    - Explain the key features, strengths, and weaknesses of each.
+    - Highlight important differences and when one might be preferred over another.
+    - Use bullet points or structured formatting if it improves clarity.
+
+    Be objective and informative.
     """
     try:
         judge_output = judge_system(question)
