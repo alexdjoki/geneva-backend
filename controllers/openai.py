@@ -261,7 +261,7 @@ def summarize_opinion(responses):
 
     Any unique insights provided by individual models
     
-    Present the output in a clear and organized format using bullet points or numbered sections."""
+    Present the output in a clear and organized format using bullet points or numbered sections without any tables."""
 
     content = summary_prompt + "\n\n"
     for res in successful_answers:
