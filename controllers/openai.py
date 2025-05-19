@@ -651,7 +651,11 @@ def compare_product(level, history, prompt, query, products):
     loop.close()
 
     answer = result["final_answer"]
-    result["final_answer"] = json.dumps({"answer": answer, "products": [product_A[0], product_B[0]]})
+    product_A = product_A[0]
+    product_B = product_B[0]
+    product_A['title'] = products[0]
+    product_B['title'] = products[1]
+    result["final_answer"] = json.dumps({"answer": answer, "products": [product_A, product_B]})
     return result
 
 def analyze_product(level, history, prompt, query):
