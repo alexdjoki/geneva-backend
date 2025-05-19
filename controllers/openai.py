@@ -346,7 +346,7 @@ def generate_answers(level, history, prompt, question):
     
     return results
 
-def anaylze_result(results):
+def analyze_result(results):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     
@@ -365,7 +365,7 @@ def get_answer(level, history, prompt, question):
         {key: value for key, value in result.items() if key != 'answer'}
         for result in results
     ]
-    best_answer, opinion = anaylze_result(results)
+    best_answer, opinion = analyze_result(results)
 
     return {
         "final_answer": best_answer,
@@ -514,7 +514,7 @@ def get_news(level, query):
         {key: value for key, value in result.items() if key != 'answer'}
         for result in results
     ]
-    best_answer, opinion = anaylze_result(results)
+    best_answer, opinion = analyze_result(results)
 
     return {
         "final_answer": best_answer,
@@ -537,13 +537,15 @@ def judge_system(question):
         }
     """
     judge_prompt = f"""
-    Classify the difficulty of the following question as Easy, Medium, or Complex.
+    You are an AI assistant responsible for classifying user queries.
 
-    Determine if the user is asking about events, data, or prices from this year (i.e., {datetime.now().year}) or recent data. Respond with "Yes" or "No".
+    1. **Difficulty Assessment**: Categorize the complexity of the question as one of the following: "Easy", "Medium", or "Complex".
 
-    Also, determine if the user is looking for a **buyable product** such as clothing, electronics, tools, or consumer goods — not platforms, services, websites, or companies.
+    2. **Timeliness Check**: Identify whether the user is asking about events, data, or prices specifically from this year ({datetime.now().year}), or any information that would be considered recent or newer than your latest knowledge update. Respond with "Yes" or "No".
 
-    I want the output in this exact JSON format: {expected_output}
+    3. **Product Intent Detection**: Determine whether the user is inquiring about a **buyable consumer product** (e.g., clothing, electronics, tools, or household goods). Do not include platforms, services, websites, or companies in this category. Respond with "Product name" or "No".
+
+    Return your answer strictly in the following JSON format: {expected_output}
     """
 
     messages = [
@@ -606,15 +608,9 @@ def ask():
         judge_output = judge_system(question)
         result = {}
         products = []
+        print(judge_output)
         if judge_output['product'] != 'No':
-            products, is_specific_model = search_product(question)
-            print(is_specific_model)
-            judge_output['level'] = "specific_product" if is_specific_model.lower() == "yes" else "general_product"
-            result = {
-                "final_answer": json.dumps(products),
-                "status_report": [],
-                "opinion": '',
-            }
+            judge_output['level'], result = analyze_product(judge_output['level'], history, prompt, question)
         elif judge_output['last_year'] == 'Yes':
             result = get_news(judge_output['level'], question)
         else:
@@ -628,6 +624,130 @@ def ask():
         print(e)
         return jsonify({"error": str(e)}), 500
 
+async def generate_answer(level, history, prompt, query):
+    try:
+        answer = await asyncio.to_thread(get_answer, level, history, prompt, query)
+        return answer
+    except Exception as e:
+        raise RuntimeError(f"Generating answer failed: {str(e)}")
+
+async def get_product(query):
+    try:
+        answer, is_specific_model = await asyncio.to_thread(search_product, query)
+        return answer
+    except Exception as e:
+        raise RuntimeError(f"Searching product failed: {str(e)}")
+
+def compare_product(level, history, prompt, query, products):
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    analyze = loop.run_until_complete(asyncio.gather(
+        generate_answer(level, history, prompt, query),
+        get_product(products[0]),
+        get_product(products[1])
+    ))
+    result, product_A, product_B = analyze
+    loop.close()
+
+    answer = result["final_answer"]
+    result["final_answer"] = json.dumps({"answer": answer, "products": [product_A[0], product_B[0]]})
+    return result
+
+def analyze_product(level, history, prompt, query):
+    analyze_prompt = f"""
+    You are an AI that classifies user intent and extracts information.
+
+    1. Determine whether the following user message indicates a desire to compare two products. Respond with "Yes" or "No" under the "compare" key.
+
+    2. If the user is comparing two products, extract the product names and return them as a list of strings under the "products" key. If not, return an empty list.
+
+    Provide your answer strictly in the following JSON format:
+    {{
+    "compare": "Yes" or "No",
+    "products": ["Product A", "Product B"]
+    }}
+
+    Message: "{query}"
+    """
+
+    response = client.chat.completions.create(
+        model="gpt-4-turbo",
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": analyze_prompt}
+        ],
+        temperature=1
+    )
+
+    
+    response = response.choices[0].message.content
+    index_open_brace = response.find('{')
+    index_open_bracket = response.find('[')
+    first_pos = min(p for p in [index_open_brace, index_open_bracket] if p != -1)
+
+    index_close_brace = response.rfind('}')
+    index_close_bracket = response.rfind(']')
+    last_pos = max(p for p in [index_close_brace, index_close_bracket] if p != -1)
+
+    response = response[first_pos:last_pos + 1]
+    response = json.loads(response)
+    
+    prompt = prompt = f"""
+    You are a helpful assistant that compares two products based on a user's question.
+
+    A user asked:
+
+    "{query}"
+
+    Please do the following:
+
+    1. Determine if the question involves comparing two specific products.
+    2. If yes, extract the product names and generate a clear comparison in **Markdown format**, with the following structure:
+
+    ### 🧾 Product Comparison: [Product A] vs [Product B]
+
+    **Similarities**
+    - Point 1
+    - Point 2
+
+    **Differences**
+    - Point 1
+    - Point 2
+
+    **Pros and Cons**
+
+    **Product A**
+    ✅ Pros:
+    - ...
+    ❌ Cons:
+    - ...
+
+    **Product B**
+    ✅ Pros:
+    - ...
+    ❌ Cons:
+    - ...
+
+    **🔍 Recommendation**
+    > Your final advice based on typical user needs.
+
+    If the input does not contain a comparison request, respond with:
+    > **Not a product comparison question.**
+    """
+
+    if response['compare'] == 'Yes':
+        result = compare_product(level, history, prompt, query, response['products'])
+        return "compare_product", result
+    else:
+        products, is_specific_model = search_product(query)
+        result = {
+            "final_answer": json.dumps(products),
+            "status_report": [],
+            "opinion": '',
+        }
+        return "specific_product" if is_specific_model.lower() == "yes" else "general_product", result
+
 def extract_info(query):
     prompt = f"""
     You are a product categorization assistant. Your job is to extract the most relevant Amazon category and category_id for a given product search query.
@@ -637,7 +757,7 @@ def extract_info(query):
     Query: "{query}"
 
     Return your answer in the following JSON format:
-
+    {{
     "search_term": "<cleaned version of query>",
     "category": "<best-matching Amazon category name>",
     "category_id": "<corresponding category ID>",
@@ -646,7 +766,7 @@ def extract_info(query):
     "min_price": "<min price user wants, if specified>",
     "max_price": "<max price user wants, if specified>",
     "is_specific_model": "<Yes or No>"
-
+    }}
     Be as precise as possible. If it's an exact model name, prioritize specific categories (e.g., Electronics > Headphones > In-Ear Headphones). If you're unsure of the category_id, still return the best guess for category.
     """
     messages = [
@@ -672,6 +792,7 @@ def extract_info(query):
 
     result = result[first_pos:last_pos + 1]
     result = json.loads(result)
+
     return result
 
 def search_product(query):
