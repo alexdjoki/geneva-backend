@@ -844,6 +844,7 @@ def search_product(query):
             "url": r.get("product_link")
         }
         for r in results
+        if isinstance(r.get("extracted_price", None), (int, float))
     ]
     return products, info['is_specific_model']
 
