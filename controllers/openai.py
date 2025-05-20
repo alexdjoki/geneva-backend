@@ -7,6 +7,8 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from together import Together
 from urllib.parse import urlparse
+from serpapi import GoogleSearch
+import re
 import anthropic
 import google.generativeai as genai
 import os
@@ -17,6 +19,7 @@ import json
 load_dotenv()
 
 client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+serpapi_key = os.getenv('SERPAPI_KEY')
 anthropic_client = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
 deepseek_client = OpenAI(api_key=os.getenv('DEEPSEEK_API_KEY'), base_url="https://api.deepseek.com")
@@ -533,17 +536,36 @@ def judge_system(question):
         {
             "level": "Easy"
             "last_year": "Yes"
-            "product": "Men's shoes"
+            "product": ["Product A", "Product B"] or []
         }
     """
     judge_prompt = f"""
     You are an AI assistant responsible for classifying user queries.
 
     1. **Difficulty Assessment**: Categorize the complexity of the question as one of the following: "Easy", "Medium", or "Complex".
+    
+    2. Determine if the user's query requires information newer than your knowledge cutoff date. Use these rules:
 
-    2. **Timeliness Check**: Identify whether the user is asking about events, data, or prices specifically from this year ({datetime.now().year}), or any information that would be considered recent or newer than your latest knowledge update. Respond with "Yes" or "No".
+        1) Respond ONLY with "No" if:
+            - The question is about facts existing before or during your knowledge period
+            - No time-sensitive information is requested
+            - The subject matter is historical or static
 
-    3. **Product Intent Detection**: Determine whether the user is inquiring about a **buyable consumer product** (e.g., clothing, electronics, tools, or household goods). Do not include platforms, services, websites, or companies in this category. Respond with "Product name" or "No".
+        2) Respond ONLY with "Yes" if:
+            - The question asks about events/developments after your cutoff
+            - Uses terms like "current", "latest", "recent", "now", "this year"
+            - Concerns rapidly-changing topics (tech, medicine, news)
+
+        3) For ambiguous cases where time isn't specified but the topic evolves:
+            - Default to "Yes" for safety
+
+        Never explain your reasoning - only output "Yes" or "No".
+
+    3. **Product Intent Detection**:  
+
+    Determine whether the user is inquiring about a **buyable consumer product** such as clothing, electronics, tools, or household goods.  
+    - If yes, extract the product names mentioned in the query and return them in a list.  
+    - If no products are found, return an empty list `[]`.
 
     Return your answer strictly in the following JSON format: {expected_output}
     """
@@ -609,7 +631,7 @@ def ask():
         result = {}
         products = []
         print(judge_output)
-        if judge_output['product'] != 'No':
+        if len(judge_output['product']) > 0:
             judge_output['level'], result = analyze_product(judge_output['level'], history, prompt, question)
         elif judge_output['last_year'] == 'Yes':
             result = get_news(judge_output['level'], question)
@@ -707,7 +729,8 @@ def analyze_product(level, history, prompt, query):
     Please do the following:
 
     1. Determine if the question involves comparing two specific products.
-    2. If yes, extract the product names and generate a clear comparison in **Markdown format**, with the following structure:
+    2. Don't include table format data.
+    3. If yes, extract the product names and generate a clear comparison in **Markdown format**, with the following structure:
 
     ### 🧾 Product Comparison: [Product A] vs [Product B]
 
@@ -803,6 +826,56 @@ def search_product(query):
     info = extract_info(query)
     search_term = info['search_term']
     print(info)
+    params = {
+        "engine": "google_shopping",
+        "q": search_term,
+        "api_key": serpapi_key
+    }
+
+    search = GoogleSearch(params)
+    results = search.get_dict()
+
+    results = results.get("shopping_results", [])
+
+    products = [
+        {
+            "price": r.get("price"),
+            "image": r.get("thumbnail"),
+            "url": r.get("product_link")
+        }
+        for r in results
+    ]
+    return products, info['is_specific_model']
+
+@openai_bp.route('/product', methods=['POST'])
+
+def product():
+    data = request.get_json()
+    query = data.get('query')
+    user_id = data.get("user_id")
+    query_type = data.get("type")
+    
+    products, is_specific_model = search_product(query)
+    product_type = "specific" if is_specific_model.lower() == "yes" else "general"
+
+    if query_type == 'search':
+        new_history = ProductHistory(user_id = user_id, search = query, products = json.dumps(products), product_type = product_type, created_at = datetime.now(), updated_at = datetime.now())
+        db.session.add(new_history)
+        db.session.commit()
+
+        return jsonify({'products': products, 'id': new_history.id, 'product_type': product_type})
+    
+    return jsonify({'products': products, 'id': 0, 'product_type': product_type})
+
+@openai_bp.route('/search-product', methods=['POST'])
+
+def search_products():
+    data = request.get_json()
+    query = data.get('question')
+    
+    info = extract_info(query)
+    search_term = info['search_term']
+    print(info)
     if not search_term:
         search_term = info['category_id']
     if info.get('color'):
@@ -844,23 +917,3 @@ def search_product(query):
         products = products[:7]
 
     return products, info['is_specific_model']
-
-@openai_bp.route('/product', methods=['POST'])
-
-def product():
-    data = request.get_json()
-    query = data.get('query')
-    user_id = data.get("user_id")
-    query_type = data.get("type")
-    
-    products, is_specific_model = search_product(query)
-    product_type = "specific" if is_specific_model.lower() == "yes" else "general"
-
-    if query_type == 'search':
-        new_history = ProductHistory(user_id = user_id, search = query, products = json.dumps(products), product_type = product_type, created_at = datetime.now(), updated_at = datetime.now())
-        db.session.add(new_history)
-        db.session.commit()
-
-        return jsonify({'products': products, 'id': new_history.id, 'product_type': product_type})
-    
-    return jsonify({'products': products, 'id': 0, 'product_type': product_type})
