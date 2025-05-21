@@ -300,7 +300,7 @@ def pick_best_answer(responses):
 
     Respond only with the selected answer. Do not include any explanations, justifications, or additional commentary.
     """
-    
+
     content = prompt + "\n\n"
     for i, res in enumerate(valid_answers):
         content += f"Answer:\n{res['answer']}\n\n"
@@ -620,17 +620,17 @@ def ask():
         return jsonify({"error": "Question is required"}), 400
 
     prompt = f"""
-    You are a knowledgeable AI assistant. Your task is to generate a clear, accurate, and helpful answer based solely on your understanding of the topic.
+    You are a knowledgeable and objective AI assistant. Your task is to generate a clear, accurate, and helpful answer based solely on your understanding of the topic.
 
-    Please carefully read the question below and provide a detailed response using natural language.
+    Please carefully read the question below and provide a detailed, well-structured response in natural language.
 
-    If the question involves comparing multiple products, technologies, or concepts, make sure to:
+    If the question involves comparing multiple products, technologies, or concepts, ensure that you:
     - Identify all items being compared.
-    - Explain the key features, strengths, and weaknesses of each.
-    - Highlight important differences and when one might be preferred over another.
-    - Use bullet points or structured formatting if it improves clarity.
+    - Explain the key features, advantages, and limitations of each.
+    - Highlight meaningful differences and suggest when one may be more suitable than another.
+    - Use bullet points, tables, or clear formatting to improve readability.
 
-    Be objective and informative.
+    Avoid including disclaimers such as "as of my last update." Focus on delivering useful, confident information without referencing time limitations.
     """
     try:
         judge_output = judge_system(question)
@@ -638,7 +638,7 @@ def ask():
         products = []
         print(judge_output)
         if len(judge_output['product']) > 0:
-            judge_output['level'], result = analyze_product(judge_output['level'], history, prompt, question)
+            judge_output['level'], result = analyze_product(judge_output['level'], judge_output['last_year'], history, prompt, question)
         elif judge_output['last_year'] == 'Yes':
             result = get_news(judge_output['level'], question)
         else:
@@ -659,6 +659,13 @@ async def generate_answer(level, history, prompt, query):
     except Exception as e:
         raise RuntimeError(f"Generating answer failed: {str(e)}")
 
+async def search_news(level, query):
+    try:
+        answer = await asyncio.to_thread(get_news, level, query)
+        return answer
+    except Exception as e:
+        raise RuntimeError(f"Searching news failed: {str(e)}")
+
 async def get_product(query):
     try:
         answer, is_specific_model = await asyncio.to_thread(search_product, query)
@@ -666,17 +673,23 @@ async def get_product(query):
     except Exception as e:
         raise RuntimeError(f"Searching product failed: {str(e)}")
 
-def compare_product(level, history, prompt, query, products):
+def compare_product(level, last_year, history, prompt, query, products):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     
     product_tasks = [get_product(product) for product in products]
 
     # Run generate_answer and all product fetches concurrently
-    analyze = loop.run_until_complete(asyncio.gather(
-        generate_answer(level, history, prompt, query),
-        *product_tasks
-    ))
+    if last_year.lower() == 'yes':
+        analyze = loop.run_until_complete(asyncio.gather(
+            search_news(level, query),
+            *product_tasks
+        ))
+    else:
+        analyze = loop.run_until_complete(asyncio.gather(
+            generate_answer(level, history, prompt, query),
+            *product_tasks
+        ))
     result = analyze[0]
     product_results = analyze[1:]
     loop.close()
@@ -696,7 +709,7 @@ def compare_product(level, history, prompt, query, products):
 
     return result
 
-def analyze_product(level, history, prompt, query):
+def analyze_product(level, last_year, history, prompt, query):
     analyze_prompt = f"""
     You are an AI assistant that analyzes product-related user queries.
 
@@ -803,7 +816,7 @@ def analyze_product(level, history, prompt, query):
         result = {}
         if response['intent'] == 'compare':
             prompt = compare_prompt
-        result = compare_product(level, history, prompt, query, response['products'])
+        result = compare_product(level, last_year, history, prompt, query, response['products'])
         return "compare_product", result
 
 def extract_info(query):
