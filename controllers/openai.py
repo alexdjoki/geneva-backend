@@ -664,33 +664,55 @@ def compare_product(level, history, prompt, query, products):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     
+    product_tasks = [get_product(product) for product in products]
+
+    # Run generate_answer and all product fetches concurrently
     analyze = loop.run_until_complete(asyncio.gather(
         generate_answer(level, history, prompt, query),
-        get_product(products[0]),
-        get_product(products[1])
+        *product_tasks
     ))
-    result, product_A, product_B = analyze
+    result = analyze[0]
+    product_results = analyze[1:]
     loop.close()
 
+    # Flatten product_results (each is a list)
+    product_data = [item[0] for item in product_results]
+
+    # Set correct titles
+    for i, product in enumerate(product_data):
+        product["title"] = products[i]
+
     answer = result["final_answer"]
-    product_A = product_A[0]
-    product_B = product_B[0]
-    product_A['title'] = products[0]
-    product_B['title'] = products[1]
-    result["final_answer"] = json.dumps({"answer": answer, "products": [product_A, product_B]})
+    result["final_answer"] = json.dumps({
+        "answer": answer,
+        "products": product_data
+    })
+
     return result
 
 def analyze_product(level, history, prompt, query):
     analyze_prompt = f"""
-    You are an AI that classifies user intent and extracts information.
+    You are an AI assistant that analyzes product-related user queries.
 
-    1. Determine whether the following user message indicates a desire to compare two products. Respond with "Yes" or "No" under the "compare" key.
+    Perform the following steps:
 
-    2. If the user is comparing two products, extract the product names and return them as a list of strings under the "products" key. If not, return an empty list.
+    1. **Looking Only**: Determine whether the user is just looking for or exploring a product casually (e.g., searching, browsing, discovering). 
+    - Respond with `"Yes"` if the intent is simply to look or search.
+    - Respond with `"No"` if the user is seeking specific information beyond just looking.
 
-    Provide your answer strictly in the following JSON format:
+    2. **User Intent**: If the answer to (1) is "No", classify the user's actual intent into one of the following:
+    - "cost" (asking about price or affordability)
+    - "review" (asking for feedback or evaluations)
+    - "compare" (comparing two or more products)
+    - "buy" (asking where or how to purchase)
+    - "unknown" (if unclear)
+
+    3. Product Identification: Extract and list all product names explicitly or implicitly referenced in the user query. If a product name is incomplete, ambiguous, or does not exactly match a known product, infer and return the most relevant and popular full product name from the product catalog that closely aligns with the original term. If no valid product reference is detected, return an empty list.
+
+    Return your response in the following strict JSON format:
     {{
-    "compare": "Yes" or "No",
+    "just_looking": "Yes" or "No",
+    "intent": "search" | "cost" | "review" | "compare" | "buy" | "unknown",
     "products": ["Product A", "Product B"]
     }}
 
@@ -719,7 +741,7 @@ def analyze_product(level, history, prompt, query):
     response = response[first_pos:last_pos + 1]
     response = json.loads(response)
     
-    prompt = prompt = f"""
+    compare_prompt = f"""
     You are a helpful assistant that compares two products based on a user's question.
 
     A user asked:
@@ -763,10 +785,7 @@ def analyze_product(level, history, prompt, query):
     > **Not a product comparison question.**
     """
 
-    if response['compare'] == 'Yes':
-        result = compare_product(level, history, prompt, query, response['products'])
-        return "compare_product", result
-    else:
+    if response['just_looking'] == 'Yes':
         products, is_specific_model = search_product(query)
         result = {
             "final_answer": json.dumps(products),
@@ -774,6 +793,12 @@ def analyze_product(level, history, prompt, query):
             "opinion": '',
         }
         return "specific_product" if is_specific_model.lower() == "yes" else "general_product", result
+    else:
+        result = {}
+        if response['intent'] == 'compare':
+            prompt = compare_prompt
+        result = compare_product(level, history, prompt, query, response['products'])
+        return "compare_product", result
 
 def extract_info(query):
     prompt = f"""
@@ -826,12 +851,14 @@ def search_product(query):
     info = extract_info(query)
     search_term = info['search_term']
     print(info)
+
     params = {
         "engine": "google_shopping",
         "q": search_term,
-        "api_key": serpapi_key
+        "api_key": serpapi_key,
     }
-
+    
+    print(params)
     search = GoogleSearch(params)
     results = search.get_dict()
 
@@ -877,44 +904,25 @@ def search_products():
     info = extract_info(query)
     search_term = info['search_term']
     print(info)
-    if not search_term:
-        search_term = info['category_id']
-    if info.get('color'):
-        search_term += f""", color is {info.get('color')}"""
-    if info.get('size'):
-        search_term += f""", size is {info.get('size')}"""
-    search_params = {
-        "api_key": rainforest_api_key,
-        "type": "search",
-        "amazon_domain": "amazon.com",
-        "search_term": search_term,
-        "category_id": info['category_id'],
-        "sort_by": "featured"
+
+    params = {
+        "engine": "google_shopping",
+        "q": search_term,
+        "api_key": serpapi_key
     }
+    
+    search = GoogleSearch(params)
+    results = search.get_dict()
 
-    response = requests.get('https://api.rainforestapi.com/request', params=search_params)
-    results = response.json()
-    results = results.get('search_results', [])
-
-    min_price = to_float(info.get('min_price'))
-    max_price = to_float(info.get('max_price'))
+    results = results.get("shopping_results", [])
 
     products = [
         {
-            "image": r.get("image", ""),
-            "price": r.get("price", {}).get("raw", ""),
-            "url": r.get("link", ""),
-            "value": r.get("price", {}).get("value", "")
+            "price": r.get("price"),
+            "image": r.get("thumbnail"),
+            "url": r.get("product_link")
         }
         for r in results
-        if isinstance(r.get("price", {}).get("value", None), (int, float))
-        and (
-            (min_price is None or r["price"]["value"] >= min_price) and
-            (max_price is None or r["price"]["value"] <= max_price)
-        )
+        if isinstance(r.get("extracted_price", None), (int, float))
     ]
-
-    if info['is_specific_model'].lower() == "yes":
-        products = products[:7]
-
-    return products, info['is_specific_model']
+    return results
