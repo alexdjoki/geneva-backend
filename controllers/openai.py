@@ -852,17 +852,25 @@ def search_product(query):
     search_term = info['search_term']
     print(info)
 
+    if info['color']:
+        search_term += f" {info['color']}"
+    if info['size']:
+        search_term += f" size {info['size']}"
+    
+    print(search_term)
     params = {
         "engine": "google_shopping",
         "q": search_term,
         "api_key": serpapi_key,
     }
     
-    print(params)
     search = GoogleSearch(params)
     results = search.get_dict()
 
     results = results.get("shopping_results", [])
+
+    min_price = to_float(info.get('min_price'))
+    max_price = to_float(info.get('max_price'))
 
     products = [
         {
@@ -872,6 +880,10 @@ def search_product(query):
         }
         for r in results
         if isinstance(r.get("extracted_price", None), (int, float))
+        and (
+            (min_price is None or r["extracted_price"] >= min_price) and
+            (max_price is None or r["extracted_price"] <= max_price)
+        )
     ]
     return products, info['is_specific_model']
 
@@ -904,25 +916,44 @@ def search_products():
     info = extract_info(query)
     search_term = info['search_term']
     print(info)
-
-    params = {
-        "engine": "google_shopping",
-        "q": search_term,
-        "api_key": serpapi_key
+    if not search_term:
+        search_term = info['category_id']
+    if info.get('color'):
+        search_term += f""", color is {info.get('color')}"""
+    if info.get('size'):
+        search_term += f""", size is {info.get('size')}"""
+    search_params = {
+        "api_key": rainforest_api_key,
+        "type": "search",
+        "amazon_domain": "amazon.com",
+        "search_term": search_term,
+        "category_id": info['category_id'],
+        "sort_by": "featured"
     }
-    
-    search = GoogleSearch(params)
-    results = search.get_dict()
 
-    results = results.get("shopping_results", [])
+    response = requests.get('https://api.rainforestapi.com/request', params=search_params)
+    results = response.json()
+    results = results.get('search_results', [])
+
+    min_price = to_float(info.get('min_price'))
+    max_price = to_float(info.get('max_price'))
 
     products = [
         {
-            "price": r.get("price"),
-            "image": r.get("thumbnail"),
-            "url": r.get("product_link")
+            "image": r.get("image", ""),
+            "price": r.get("price", {}).get("raw", ""),
+            "url": r.get("link", ""),
+            "value": r.get("price", {}).get("value", "")
         }
         for r in results
-        if isinstance(r.get("extracted_price", None), (int, float))
+        if isinstance(r.get("price", {}).get("value", None), (int, float))
+        and (
+            (min_price is None or r["price"]["value"] >= min_price) and
+            (max_price is None or r["price"]["value"] <= max_price)
+        )
     ]
-    return results
+
+    if info['is_specific_model'].lower() == "yes":
+        products = products[:7]
+
+    return products, info['is_specific_model']
