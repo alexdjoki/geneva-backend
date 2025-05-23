@@ -59,7 +59,7 @@ def gpt4o_generate(history, prompt, question):
     })
 
     return client.chat.completions.create(
-        model="gpt-4-turbo",
+        model="gpt-4.1-2025-04-14",
         messages=messages
     ).choices[0].message.content
 
@@ -91,7 +91,7 @@ def claude_generate(history, prompt, question):
 
     while True:
         response = anthropic_client.messages.create(
-            model='claude-3-5-sonnet-20241022',
+            model='claude-3-7-sonnet-latest',
             max_tokens=1024,
             messages=messages
         )
@@ -145,25 +145,29 @@ async def get_gemini_answer(history, prompt, question):
         return {"model": "Gemini 2.5 Pro", "answer": str(e), "status": "failed"}
 
 def deepseek_generate(history, prompt, question):
-    messages = [
-                {"role": "system", "content": prompt},
-            ]
-            
-    for element in history:
-        if element['type'] == 'question':
-            messages.append({"role": "user", "content": element["text"]})
-        if element['type'] == 'answer':
-            messages.append({"role": "assistant", "content": element["text"]})
-    
-    messages.append({
-        "role": "user",
-        "content": question
-    })
+    try:
+        messages = [
+                    {"role": "system", "content": prompt},
+                ]
+                
+        for element in history:
+            if element['type'] == 'question':
+                messages.append({"role": "user", "content": element["text"]})
+            if element['type'] == 'answer':
+                messages.append({"role": "assistant", "content": element["text"]})
+        
+        messages.append({
+            "role": "user",
+            "content": question
+        })
 
-    return deepseek_client.chat.completions.create(
-        model="deepseek-chat",
-        messages=messages
-    ).choices[0].message.content
+        return deepseek_client.chat.completions.create(
+            model="deepseek-chat",
+            messages=messages
+        ).choices[0].message.content
+    except Exception as e:
+        print(str(e))
+        return ''
 
 async def get_deepseek_answer(history, prompt, question):
     print('start deepseek')
@@ -191,7 +195,7 @@ def grok_generate(history, prompt, question):
     })
 
     return grok_client.chat.completions.create(
-        model="grok-3-latest",
+        model="grok-3-fast-latest",
         messages=messages
     ).choices[0].message.content
 
@@ -206,7 +210,7 @@ async def get_grok_answer(history, prompt, question):
 
 def mistral_generate(history, prompt, question):
     payload = {
-        "model": "mistral-large-latest",
+        "model": "mistral-large-2411",
         "messages": [
             {"role": "user", "content": question}
         ],
@@ -537,11 +541,18 @@ def retrieve():
     question = data.get("question")
     return retrieve_news(question)
 
-def judge_system(question):
+def judge_system(question, history = []):
+    history_text = ""
+    for item in history:
+        prefix = "User" if item["type"] == "question" else "Assistant"
+        history_text += f"{prefix}: {item['text']}\n"
+
     expected_output = """
         {
             "level": "Easy"
             "last_year": "Yes"
+            "used_in_context": true or false,
+            "updated_question": "Rewritten question if used_in_context is true, otherwise empty string"
             "product": ["Product A", "Product B"] or []
         }
     """
@@ -567,26 +578,37 @@ def judge_system(question):
 
         Never explain your reasoning - only output "Yes" or "No".
 
-    3. **Product Intent Detection**:  
+    3. **used_in_context**: Determine if the current question depends on or references the history. Say `true` if it’s a follow-up or refers to anything previously discussed. Say `false` if it’s a completely new topic.
+
+    4. **updated_question**:
+        - If `used_in_context` is `true`, rewrite the question so that it is fully self-contained, including the necessary context from the conversation history.
+        - If `used_in_context` is `false`, return an empty string.
+
+    5. **Product Intent Detection**:  
 
     Determine whether the user is inquiring about a **buyable consumer product** such as clothing, electronics, tools, or household goods.  
     - If yes, extract the product names mentioned in the query and return them in a list.  
     - If no products are found, return an empty list `[]`.
 
     Return your answer strictly in the following JSON format: {expected_output}
+
+    Conversation history:
+    {history_text}
+
+    Current question:
+    {question}
+
     """
 
     messages = [
         {"role": "system", "content": judge_prompt},
+        {"role": "user", "content": question}
     ]
-    messages.append({
-        "role": "user",
-        "content": question
-    })
 
     response = deepseek_client.chat.completions.create(
         model="deepseek-chat",
-        messages=messages
+        messages=messages,
+        temperature=0.1
     )
     
     judge_output = response.choices[0].message.content
@@ -633,7 +655,11 @@ def ask():
     Avoid including disclaimers such as "as of my last update." Focus on delivering useful, confident information without referencing time limitations.
     """
     try:
-        judge_output = judge_system(question)
+        judge_output = judge_system(question, history)
+        if judge_output['used_in_context'] == False:
+            history = []
+        else:
+            question = judge_output['updated_question']
         result = {}
         products = []
         print(judge_output)
@@ -739,12 +765,12 @@ def analyze_product(level, last_year, history, prompt, query):
     """
 
     response = client.chat.completions.create(
-        model="gpt-4-turbo",
+        model="gpt-4.1-2025-04-14",
         messages=[
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": analyze_prompt}
         ],
-        temperature=1
+        temperature=0.1
     )
 
     
