@@ -454,8 +454,8 @@ def compress_articles(articles, max_tokens=700):
 
 def retrieve_news(query):
     # Fetch from two APIs
-    brave_articles = fetch_brave_news(query)
     google_articles = fetch_google_pse_news(query)
+    brave_articles = fetch_brave_news(query)
 
     # Merge + deduplicate
     all_articles = google_articles + brave_articles
@@ -514,9 +514,23 @@ def generate_news(level, history, prompt, question):
 def get_news(level, query):
     result = retrieve_news(query)
     print('start analyzing news')
-    prompt = "You are a helpful research assistant that summarizes news search results."
+    prompt = "Summarize the provided news search results clearly and objectively for a human reader."
+
     question = f"""
-    Summarize the following search results into a brief report. Highlight the most relevant and recent information for the topic from the Search Results: "{query}"
+    Summarize the topic: "{query}"
+
+    Use only the search results provided below. Do not add information from other sources. The goal is to create a clear, easy-to-read news summary that emphasizes the latest developments.
+
+    **Focus first on the most recent and time-sensitive information**, then include relevant background or supporting context as needed.
+
+    Guidelines:
+    - Start with the most recent events or updates (especially those from the last 30 days)
+    - Highlight specific facts: dates, names, companies, places, decisions, or statistics
+    - Summarize only what is reported in the provided search results
+    - Avoid speculation, repetition, or vague commentary
+    - If multiple viewpoints or updates exist, summarize the differences concisely
+
+    Use a clear, professional tone. Present the summary in bullet points or short paragraphs for quick readability.
 
     Search Results:
     {result['compressed_summary']}
