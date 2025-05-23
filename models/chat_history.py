@@ -4,7 +4,7 @@ from app import db
 class ChatHistory(BaseModel):
     __tablename__ = 'chat_history'
 
-    user_id = db.Column(db.Integer, nullable=False)
+    user_id = db.Column(db.Text, nullable=False)
     chat_id = db.Column(db.Integer, nullable=False)
     question = db.Column(db.Text, nullable=False)
     answer = db.Column(db.Text, nullable=False)

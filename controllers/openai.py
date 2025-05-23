@@ -91,7 +91,7 @@ def claude_generate(history, prompt, question):
 
     while True:
         response = anthropic_client.messages.create(
-            model='claude-3-7-sonnet-latest',
+            model='claude-opus-4-20250514',
             max_tokens=1024,
             messages=messages
         )
@@ -115,10 +115,10 @@ async def get_claude_answer(history, prompt, question):
     try:
         answer = await asyncio.to_thread(claude_generate, history, prompt, question)
         print('end claude')
-        return {"model": "Claude Sonnet 3.7", "answer": answer, "status": "success"}
+        return {"model": "Claude Opus 4", "answer": answer, "status": "success"}
     except Exception as e:
         print(str(e))
-        return {"model": "Claude Sonnet 3.7", "answer": str(e), "status": "failed"}
+        return {"model": "Claude Opus 4", "answer": str(e), "status": "failed"}
 
 # Gemini
 def gemini_generate(history, prompt, question):
