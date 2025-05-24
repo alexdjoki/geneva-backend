@@ -11,7 +11,7 @@ def list():
   data = request.get_json()
   user_id = data.get('user_id')
   try:
-    producthistory = ProductHistory.query.filter_by(user_id = user_id)
+    producthistory = ProductHistory.query.all()
     list = [item.to_dict() for item in producthistory]
     return jsonify(list), 200
   except Exception as e:
