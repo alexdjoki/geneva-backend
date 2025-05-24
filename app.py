@@ -24,6 +24,9 @@ def create_app():
 
     from controllers.product_history import product_history_bp
     app.register_blueprint(product_history_bp, url_prefix='/product-history')
+    
+    from controllers.product import product_bp
+    app.register_blueprint(product_bp, url_prefix='/product')
 
     from controllers.auth import access_key_bp
     app.register_blueprint(access_key_bp, url_prefix='/auth')
