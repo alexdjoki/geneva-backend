@@ -317,7 +317,7 @@ def pick_best_answer(responses):
         ],
     )
 
-    return "Consensus:\n" + response.choices[0].message.content.strip()
+    return "**Consensus:**\n" + response.choices[0].message.content.strip()
 
 async def get_best_answer(responses):
     try:
