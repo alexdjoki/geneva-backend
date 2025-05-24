@@ -11,7 +11,7 @@ def list():
   data = request.get_json()
   user_id = data.get('user_id')
   try:
-    chathistory = ChatHistory.query.filter_by(user_id = user_id)
+    chathistory = ChatHistory.query.all()
     list = [item.to_dict() for item in chathistory]
     return jsonify(list), 200
   except Exception as e:
