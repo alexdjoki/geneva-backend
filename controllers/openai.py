@@ -986,8 +986,9 @@ def search_product(query):
             "image": r.get("thumbnail"),
             "url": r.get("product_link"),
             "title": r.get("title"),
+            "thumbnails":  r.get("thumbnails")
         }
-        for r in results_sorted
+        for r in results
         if isinstance(r.get("extracted_price", None), (int, float))
            and (
                    (min_price is None or r["extracted_price"] >= min_price) and
