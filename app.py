@@ -16,6 +16,8 @@ def create_app():
     bcrypt.init_app(app)
     jwt.init_app(app)
 
+
+
     from controllers.openai import openai_bp
     app.register_blueprint(openai_bp, url_prefix='/openai')
 
@@ -24,10 +26,15 @@ def create_app():
 
     from controllers.product_history import product_history_bp
     app.register_blueprint(product_history_bp, url_prefix='/product-history')
-    
+
     from controllers.product import product_bp
     app.register_blueprint(product_bp, url_prefix='/product')
 
     from controllers.auth import access_key_bp
     app.register_blueprint(access_key_bp, url_prefix='/auth')
+
+
+    from controllers.dashboard import dashboard_bp
+    app.register_blueprint(dashboard_bp, url_prefix='/dashboard')
+
     return app

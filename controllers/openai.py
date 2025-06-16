@@ -950,6 +950,17 @@ def extract_info(query):
 
     return result
 
+async def fetch_html(session, url):
+    try:
+        async with session.get(url) as response:
+            if response.status == 200:
+                return await response.text()
+            else:
+                print(f"Failed to fetch {url} with status {response.status}")
+    except Exception as e:
+        print(f"Error fetching {url}: {e}")
+    return None
+
 #Search product from google shopping using SerpAPI
 def search_product(query):
     info = extract_info(query)
@@ -971,6 +982,8 @@ def search_product(query):
     }
     
     search = GoogleSearch(params)
+    print("-----------SEARCH for GOOGLE---------")
+    print(search)
     results = search.get_dict()
 
     results = results.get("shopping_results", [])
@@ -995,6 +1008,7 @@ def search_product(query):
                    (max_price is None or r["extracted_price"] <= max_price)
            )
     ]
+
     return products, info['is_specific_model']
     
 #main route that get the user wanted products
