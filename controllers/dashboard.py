@@ -1,14 +1,14 @@
 from flask import Blueprint, request, jsonify
-from models.auth import AccessKey
-from models.chat_history import ChatHistory
-from models.product_history import ProductHistory
+# from models.auth import AccessKey
+# from models.chat_history import ChatHistory
+# from models.product_history import ProductHistory
+from models.dashboard import Dashboard
 
 dashboard_bp = Blueprint('dashboard', __name__)
 
 @dashboard_bp.route('/', methods=['GET', 'POST', 'OPTIONS'])
 
 def index():
-    token_count = AccessKey.query.count()
-    chat_count = ChatHistory.query.count()
-    product_count = ProductHistory.query.count()
-    return jsonify({"token_count": token_count, "chat_count": chat_count, "product_count": product_count, "monthly_active": 2459, "total_input_tokens": 125223, "total_output_tokens": 4231232, "cost_to_date": 0})
+    data = Dashboard.query.all()
+    data_list = [item.to_dict() for item in data]
+    return jsonify(data_list[0])
