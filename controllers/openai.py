@@ -488,6 +488,7 @@ def retrieve_news(query):
         "query": query,
         "sources_used": list({a['source'] for a in sorted_articles[:4]}),
         "compressed_summary": compressed_summary
+        
     }
 
 #Analyze the news by AI models using gathering. 3/5/7
