@@ -17,7 +17,6 @@ def list():
       products = random.sample(products, min(40, len(products)))
     else:
       products = Product.query.filter_by(category = category).all()
-      
     list = [item.to_dict() for item in products]
     return jsonify(list), 200
   except Exception as e:

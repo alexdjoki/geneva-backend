@@ -15,6 +15,10 @@ import os
 import requests
 import asyncio
 import json
+from models.auth import AccessKey
+from models.transactions import Transactions
+from datetime import datetime, timedelta
+
 
 load_dotenv()
 
@@ -581,8 +585,9 @@ def retrieve():
 def judge_system(question, history = []):
     history_text = ""
     for item in history:
+        text = item.get('text', '')  # This won't raise KeyError
         prefix = "User" if item["type"] == "question" else "Assistant"
-        history_text += f"{prefix}: {item['text']}\n"
+        history_text += f"{prefix}: {text}\n"
 
     expected_output = """
         {
@@ -677,6 +682,11 @@ def ask():
     user_id = data.get("user_id")
     history = data.get("history")
     question = data.get("question")
+
+    valid = check_valid(user_id)
+
+    if valid == False:
+        return jsonify({"level": "subscribe"})
     if not question:
         return jsonify({"error": "Question is required"}), 400
 
@@ -696,29 +706,26 @@ def ask():
     Avoid including disclaimers such as "as of my last update." Focus on delivering useful, confident information without referencing time limitations.
     And about answers and news, you have not to mention source that you got the new data.
     """
-    try:
-        judge_output = judge_system(question, history)
-        if judge_output['used_in_context'] == False:
-            history = []
-        else:
-            question = judge_output['updated_question']
-        print("Judge_output")
-        print(judge_output)
+    judge_output = judge_system(question, history)
+    if judge_output['used_in_context'] == False:
+        history = []
+    else:
+        question = judge_output['updated_question']
+    print("Judge_output")
+    print(judge_output)
 
-        if len(judge_output['product']) > 0:
-            judge_output['level'], result = analyze_product(judge_output['level'], judge_output['last_year'], history, prompt, question)
-        elif judge_output['last_year'] == 'Yes':
-            result = get_news(judge_output['level'], question)
-        else:
-            result = get_answer(judge_output['level'], history, prompt, question)
-        new_history = ChatHistory(user_id = user_id, answer = result["final_answer"], status_report = json.dumps(result["status_report"]), opinion = result["opinion"], chat_id = chat_id, question = question, level = judge_output['level'], created_at = datetime.now(), updated_at = datetime.now())
-        db.session.add(new_history)
-        db.session.commit()
-        return jsonify({"question": question, "answer": result["final_answer"], "level": judge_output['level'], "status_report": result["status_report"], "opinion": result["opinion"]})
+    if len(judge_output['product']) > 0:
+        judge_output['level'], result = analyze_product(judge_output['level'], judge_output['last_year'], history, prompt, question)
+    elif judge_output['last_year'] == 'Yes':
+        result = get_news(judge_output['level'], question)
+    else:
+        result = get_answer(judge_output['level'], history, prompt, question)
+    new_history = ChatHistory(user_id = user_id, answer = result["final_answer"], status_report = json.dumps(result["status_report"]), opinion = result["opinion"], chat_id = chat_id, question = question, level = judge_output['level'], created_at = datetime.now(), updated_at = datetime.now())
+    db.session.add(new_history)
+    db.session.commit()
+    return jsonify({"question": question, "answer": result["final_answer"], "level": judge_output['level'], "status_report": result["status_report"], "opinion": result["opinion"]})
 
-    except Exception as e:
-        print(e)
-        return jsonify({"error": str(e)}), 500
+
 
 async def generate_answer(level, history, prompt, query):
     try:
@@ -726,6 +733,35 @@ async def generate_answer(level, history, prompt, query):
         return answer
     except Exception as e:
         raise RuntimeError(f"Generating answer failed: {str(e)}")
+
+def check_valid(user_id):
+    if not user_id:
+        return jsonify({"detail": "Missing device_id"}), 400
+
+    valid = AccessKey.query.filter_by(device_id=user_id).first()
+
+    # Debug: Check if 'valid' exists and has 'count' attribute
+    if not valid:
+        print(f"No AccessKey found for device_id: {user_id}")
+        return False
+
+    if not hasattr(valid, 'count'):
+        print(f"AccessKey for {user_id} has no 'count' attribute")
+        return False
+
+    now = datetime.utcnow()
+    count = valid.count
+    if valid.valid_date > now:  # Check date validity
+        return True
+    elif count > 0:  # Check remaining uses
+        valid.count = count - 1
+        try:
+            db.session.commit()
+            return True
+        except Exception as e:
+            db.session.rollback()
+            return False
+    return False
 
 async def search_news(level, query):
     try:
