@@ -685,10 +685,10 @@ def ask():
 
     valid = check_valid(user_id)
 
-    if valid == False:
-        return jsonify({"level": "subscribe"})
-    if not question:
-        return jsonify({"error": "Question is required"}), 400
+    # if valid == False:
+    #     return jsonify({"level": "subscribe"})
+    # if not question:
+    #     return jsonify({"error": "Question is required"}), 400
 
     prompt = f"""
     You are a knowledgeable and objective AI assistant. Your task is to generate a clear, accurate, and helpful answer based solely on your understanding of the topic.
