@@ -44,7 +44,7 @@ def generate_access_key():
     print(email)
     key = str(uuid.uuid4().hex)
     try:
-      new_key = AccessKey(device_id = '', access_key = key, status = False, created_at = datetime.now(), updated_at = datetime.now(), email=email, valid_date=datetime.utcnow())
+      new_key = AccessKey(device_id = '', access_key = key, status = False, created_at = datetime.now(), updated_at = datetime.now(), email=email, valid_date=datetime.utcnow(), count=4)
       db.session.add(new_key)
       db.session.commit()
       return jsonify({"access_key": key})
