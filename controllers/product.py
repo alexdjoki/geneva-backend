@@ -14,7 +14,7 @@ def list():
   try:
     if category == 'random':
       products = Product.query.all()
-      products = random.sample(products, min(100, len(products)))
+      products = random.sample(products, min(40, len(products)))
     else:
       products = Product.query.filter_by(category = category).all()
     list = [item.to_dict() for item in products]

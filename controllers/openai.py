@@ -48,15 +48,15 @@ def to_float(val):
 #Generate answer using GPT-4o (OpenAI)
 def gpt4o_generate(history, prompt, question):
     messages = [
-                {"role": "system", "content": prompt},
-            ]
-            
+        {"role": "system", "content": prompt},
+    ]
+
     for element in history:
         if element['type'] == 'question':
             messages.append({"role": "user", "content": element["text"]})
         if element['type'] == 'answer':
             messages.append({"role": "assistant", "content": element["text"]})
-    
+
     messages.append({
         "role": "user",
         "content": question
@@ -85,7 +85,7 @@ def claude_generate(history, prompt, question):
             messages.append({"role": "user", "content": element["text"]})
         if element['type'] == 'answer':
             messages.append({"role": "assistant", "content": element["text"]})
-    
+
     messages.append({
         "role": "user",
         "content": question
@@ -154,15 +154,15 @@ async def get_gemini_answer(history, prompt, question):
 def deepseek_generate(history, prompt, question):
     try:
         messages = [
-                    {"role": "system", "content": prompt},
-                ]
-                
+            {"role": "system", "content": prompt},
+        ]
+
         for element in history:
             if element['type'] == 'question':
                 messages.append({"role": "user", "content": element["text"]})
             if element['type'] == 'answer':
                 messages.append({"role": "assistant", "content": element["text"]})
-        
+
         messages.append({
             "role": "user",
             "content": question
@@ -188,15 +188,15 @@ async def get_deepseek_answer(history, prompt, question):
 #Generate answer using Grok 3
 def grok_generate(history, prompt, question):
     messages = [
-                {"role": "system", "content": prompt},
-            ]
-            
+        {"role": "system", "content": prompt},
+    ]
+
     for element in history:
         if element['type'] == 'question':
             messages.append({"role": "user", "content": element["text"]})
         if element['type'] == 'answer':
             messages.append({"role": "assistant", "content": element["text"]})
-    
+
     messages.append({
         "role": "user",
         "content": question
@@ -265,7 +265,7 @@ async def get_llama_answer(history, prompt, question):
         return {"model": "Llama 4", "answer": answer, "status": "success"}
     except Exception as e:
         return {"model": "Llama 4", "answer": str(e), "status": "failed"}
-        
+
 #Summarize the opinion from answers of each models
 def summarize_opinion(responses):
     successful_answers = [res for res in responses if res["status"] == "success"]
@@ -302,7 +302,7 @@ async def get_opinion(responses):
         return answer
     except Exception as e:
         raise RuntimeError(f"Summarizing failed: {str(e)}")
-        
+
 #Pick besk answer from answers of AI mdoels
 def pick_best_answer(responses):
     # Here you can use heuristics or even send all to GPT for ranking
@@ -341,7 +341,7 @@ async def get_best_answer(responses):
         return answer
     except Exception as e:
         raise RuntimeError(f"Picking best answer failed: {str(e)}")
-#Generate answer of each models using gathering 3/5/7 
+#Generate answer of each models using gathering 3/5/7
 def generate_answers(level, history, prompt, question):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -376,14 +376,14 @@ def generate_answers(level, history, prompt, question):
         ]
     results = loop.run_until_complete(asyncio.gather(*tasks))
     loop.close()
-    
+
     return results
 
 #Pick best answer and summarize the opinion from answers of each models
 def analyze_result(results):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    
+
     summarize = loop.run_until_complete(asyncio.gather(
         get_best_answer(results),
         get_opinion(results)
@@ -492,7 +492,7 @@ def retrieve_news(query):
         "query": query,
         "sources_used": list({a['source'] for a in sorted_articles[:4]}),
         "compressed_summary": compressed_summary
-        
+
     }
 
 #Analyze the news by AI models using gathering. 3/5/7
@@ -526,9 +526,9 @@ def generate_news(level, history, prompt, question):
         ]
     results = loop.run_until_complete(asyncio.gather(*tasks))
     loop.close()
-    
+
     return results
-    
+
 #Get the news using google search and brave API. After that Analyze the searched results using AI models
 def get_news(level, query):
     result = retrieve_news(query)
@@ -572,14 +572,14 @@ def get_news(level, query):
         "opinion": opinion
     }
 
-#Test route   
+#Test route
 @openai_bp.route('/retrieve', methods=['POST'])
 def retrieve():
     data = request.get_json()
     question = data.get("question")
     return retrieve_news(question)
 
-#level: question complexity, last_year: user want recent_data or not, used_in_context: user asked question is related with previous question or not. 
+#level: question complexity, last_year: user want recent_data or not, used_in_context: user asked question is related with previous question or not.
 #updated_question: if used_in_context is yes, generated updated_question(ex. question: explain more about above product. updated_question: explain more about PS5 )
 #product: user wanted products list
 def judge_system(question, history = []):
@@ -652,7 +652,7 @@ def judge_system(question, history = []):
         messages=messages,
         temperature=0.1
     )
-    
+
     judge_output = response.choices[0].message.content
     index_open_brace = judge_output.find('{')
     index_open_bracket = judge_output.find('[')
@@ -683,12 +683,13 @@ def ask():
     history = data.get("history")
     question = data.get("question")
 
-    valid = check_valid(user_id)
-
+    # valid = check_valid(user_id)
+    #
     # if valid == False:
     #     return jsonify({"level": "subscribe"})
     # if not question:
     #     return jsonify({"error": "Question is required"}), 400
+
 
     prompt = f"""
     You are a knowledgeable and objective AI assistant. Your task is to generate a clear, accurate, and helpful answer based solely on your understanding of the topic.
@@ -705,7 +706,10 @@ def ask():
     
     Avoid including disclaimers such as "as of my last update." Focus on delivering useful, confident information without referencing time limitations.
     And about answers and news, you have not to mention source that you got the new data.
+    You have to provide accurate and detailed answers while satisfying the conditions above.
     """
+
+    print(prompt)
     judge_output = judge_system(question, history)
     if judge_output['used_in_context'] == False:
         history = []
@@ -720,6 +724,9 @@ def ask():
         result = get_news(judge_output['level'], question)
     else:
         result = get_answer(judge_output['level'], history, prompt, question)
+    token = AccessKey.query.filter_by(device_id=user_id).first()
+    if token:
+        user_id = token.email
     new_history = ChatHistory(user_id = user_id, answer = result["final_answer"], status_report = json.dumps(result["status_report"]), opinion = result["opinion"], chat_id = chat_id, question = question, level = judge_output['level'], created_at = datetime.now(), updated_at = datetime.now())
     db.session.add(new_history)
     db.session.commit()
@@ -782,7 +789,7 @@ async def get_product(query):
 def compare_product(level, last_year, history, prompt, query, products):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    
+
     product_tasks = [get_product(product) for product in products]
 
     product_results = loop.run_until_complete(asyncio.gather(*product_tasks))
@@ -879,7 +886,7 @@ def analyze_product(level, last_year, history, prompt, query):
 
     response = response[first_pos:last_pos + 1]
     response = json.loads(response)
-    
+
     compare_prompt = f"""
     You are a helpful assistant that compares two products based on a user's question.
 
@@ -1017,7 +1024,7 @@ def search_product(query):
         "api_key": serpapi_key,
         "sorted": "newest"
     }
-    
+
     search = GoogleSearch(params)
     print("-----------SEARCH for GOOGLE---------")
     print(search)
@@ -1047,7 +1054,7 @@ def search_product(query):
     ]
 
     return products, info['is_specific_model']
-    
+
 #main route that get the user wanted products
 @openai_bp.route('/product', methods=['POST'])
 
@@ -1056,7 +1063,7 @@ def product():
     query = data.get('query')
     user_id = data.get("user_id")
     query_type = data.get("type")
-    
+
     products, is_specific_model = search_product(query)
     product_type = "specific" if is_specific_model.lower() == "yes" else "general"
 
@@ -1066,7 +1073,7 @@ def product():
         db.session.commit()
 
         return jsonify({'products': products, 'id': new_history.id, 'product_type': product_type})
-    
+
     return jsonify({'products': products, 'id': 0, 'product_type': product_type})
 
 # Test route
@@ -1075,7 +1082,7 @@ def product():
 def search_products():
     data = request.get_json()
     query = data.get('question')
-    
+
     info = extract_info(query)
     search_term = info['search_term']
     print(info)
@@ -1110,10 +1117,10 @@ def search_products():
         }
         for r in results
         if isinstance(r.get("price", {}).get("value", None), (int, float))
-        and (
-            (min_price is None or r["price"]["value"] >= min_price) and
-            (max_price is None or r["price"]["value"] <= max_price)
-        )
+           and (
+                   (min_price is None or r["price"]["value"] >= min_price) and
+                   (max_price is None or r["price"]["value"] <= max_price)
+           )
     ]
 
     if info['is_specific_model'].lower() == "yes":
