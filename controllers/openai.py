@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from models.chat_history import ChatHistory
 from models.product_history import ProductHistory
+from models.devices import Devices
 from app import db
 from datetime import datetime
 from dotenv import load_dotenv
@@ -1061,14 +1062,14 @@ def search_product(query):
 def product():
     data = request.get_json()
     query = data.get('query')
-    user_id = data.get("user_id")
+    device_id = data.get("user_id")
     query_type = data.get("type")
 
     products, is_specific_model = search_product(query)
     product_type = "specific" if is_specific_model.lower() == "yes" else "general"
-
+    device_info = Devices.query.filter_by(device_id = device_id).first()
     if query_type == 'search':
-        new_history = ProductHistory(user_id = user_id, search = query, products = json.dumps(products), product_type = product_type, created_at = datetime.now(), updated_at = datetime.now())
+        new_history = ProductHistory(user_id = device_info.email, search = query, products = json.dumps(products), product_type = product_type, created_at = datetime.now(), updated_at = datetime.now())
         db.session.add(new_history)
         db.session.commit()
 
