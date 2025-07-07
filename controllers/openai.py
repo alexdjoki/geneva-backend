@@ -707,7 +707,7 @@ def ask():
     
     Avoid including disclaimers such as "as of my last update." Focus on delivering useful, confident information without referencing time limitations.
     And about answers and news, you have not to mention source that you got the new data.
-    You have to provide accurate and detailed answers while satisfying the conditions above.
+    You have to provide accurate and detailed answers(give detailed reports (2,000+ words) whenever a user asks for it.) while satisfying the conditions above.
     """
 
     print(prompt)
