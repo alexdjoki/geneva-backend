@@ -722,7 +722,7 @@ def ask():
         result = get_news(judge_output['level'], question)
     else:
         result = get_answer(judge_output['level'], history, prompt, question)
-    token = AccessKey.query.filter_by(device_id=user_id).first()
+    token = Devices.query.filter_by(device_id=user_id).first()
     if token:
         user_id = token.email
     new_history = ChatHistory(user_id = user_id, answer = result["final_answer"], status_report = json.dumps(result["status_report"]), opinion = result["opinion"], chat_id = chat_id, question = question, level = judge_output['level'], created_at = datetime.now(), updated_at = datetime.now())
