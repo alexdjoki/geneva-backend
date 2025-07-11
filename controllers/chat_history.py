@@ -16,9 +16,6 @@ def chatContent():
   try:
     chat_content = ChatHistory.query.filter_by(chat_id = chat_id).all();
     list = [item.to_dict() for item in chat_content]
-    if not list or len(list) == 0:
-            random_records = ChatHistory.query.order_by(func.random()).limit(10).all()
-            list = [item.to_dict() for item in random_records]
     return jsonify(list), 200
   except Exception as e:
     print(e)
@@ -34,6 +31,8 @@ def list():
     device_info = Devices.query.filter_by(device_id = device_id).first()
     chathistory = ChatHistory.query.filter_by(user_id = device_info.email).all()
     # list = [item.to_dict() for item in chathistory]
+    if not chathistory or len(chathistory) == 0:
+       chathistory = ChatHistory.query.order_by(func.random()).limit(10).all()
     result_list = [{'id': item.id, 'question': item.question, 'level': item.level, 'chat_id': item.chat_id} for item in chathistory]
     return jsonify(result_list), 200
   except Exception as e:
