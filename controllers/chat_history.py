@@ -3,6 +3,7 @@ from models.chat_history import ChatHistory
 from models.devices import Devices
 from app import db
 from datetime import datetime
+from sqlalchemy import func
 
 chat_history_bp = Blueprint('chat-history', __name__)
 
@@ -15,6 +16,9 @@ def chatContent():
   try:
     chat_content = ChatHistory.query.filter_by(chat_id = chat_id).all();
     list = [item.to_dict() for item in chat_content]
+    if not list or len(list) == 0:
+            random_records = ChatHistory.query.order_by(func.random()).limit(10).all()
+            list = [item.to_dict() for item in random_records]
     return jsonify(list), 200
   except Exception as e:
     print(e)
