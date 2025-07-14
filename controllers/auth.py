@@ -34,15 +34,16 @@ def transaction_history():
                 'amount': transaction.amount,
                 'created_at': transaction.created_at.isoformat() if transaction.created_at else None,
             })
-        if len(transaction_data) == 0:
+        
+        if len(transactions) == 0:
             transaction_data.append({
-                'id': '--,
-                'email': token.email,
+                'id': '--',
+                'email': '--',
                 'wallet_address': '--',
                 'access_key': token.access_key,
-                'status': '--',
-                'amount': '--',
-                'created_at': '--',
+                'status': 'free',
+                'amount': '0',
+                'created_at': token.created_at.isoformat() if token.created_at else None,
             })
         return jsonify({"transactions": transaction_data, "valid_date": token.valid_date})
     except Exception as e:
