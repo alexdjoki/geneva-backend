@@ -13,11 +13,13 @@ def transaction_history():
     try:
         data = request.get_json()
         user_id = data["user_id"]
-        token = AccessKey.query.filter_by(device_id=user_id).first()
-        if not token:
+        # token = AccessKey.query.filter_by(device_id=user_id).first()
+        device = Devices.query.filter_by(device_id=user_id).first()
+        token = AccessKey.query.filter_by(email=device.email).first()
+        if not device:
             return jsonify({'error': 'User not found'}), 404
 
-        email = token.email
+        email = device.email
         transactions = Transactions.query.filter_by(email=email).all()
 
         # Convert transactions to a list of dictionaries
