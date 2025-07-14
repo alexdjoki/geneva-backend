@@ -32,7 +32,7 @@ def list():
     chathistory = ChatHistory.query.filter_by(user_id = device_info.email).all()
     # list = [item.to_dict() for item in chathistory]
     if not chathistory or len(chathistory) == 0:
-       chathistory = ChatHistory.query.order_by(func.random()).limit(10).all()
+       chathistory = ChatHistory.query.order_by(func.random()).limit(30).all()
     result_list = [{'id': item.id, 'question': item.question, 'level': item.level, 'chat_id': item.chat_id} for item in chathistory]
     return jsonify(result_list), 200
   except Exception as e:
