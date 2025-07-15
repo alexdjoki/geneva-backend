@@ -76,7 +76,7 @@ async def get_gpt4o_answer(history, prompt, question):
         print(answer)
         return {"model": "GPT-4.1", "answer": answer, "status": "success"}
     except Exception as e:
-        return {"model": "GPT-4.1", "answer": str(e), "status": "failed"}
+        return {"model": "GPT-4.1", "answer": "", "status": "failed"}
 
 # Generate answer using Claude (Anthropic)
 def claude_generate(history, prompt, question):
@@ -122,10 +122,10 @@ async def get_claude_answer(history, prompt, question):
         answer = await asyncio.to_thread(claude_generate, history, prompt, question)
         print('end claude')
         print(answer)
-        return {"model": "Claude Opus 4", "answer": answer, "status": "success"}
+        return {"model": "Claude Opus 3", "answer": answer, "status": "success"}
     except Exception as e:
         print(str(e))
-        return {"model": "Claude Opus 4", "answer": str(e), "status": "failed"}
+        return {"model": "Claude Opus 3", "answer": "", "status": "failed"}
 
 # Generate answer using Gemini
 def gemini_generate(history, prompt, question):
@@ -149,7 +149,7 @@ async def get_gemini_answer(history, prompt, question):
         print('end gemini')
         return {"model": "Gemini 2.5 Pro", "answer": answer, "status": "success"}
     except Exception as e:
-        return {"model": "Gemini 2.5 Pro", "answer": str(e), "status": "failed"}
+        return {"model": "Gemini 2.5 Pro", "answer": "", "status": "failed"}
 
 #Generate answer using deepseek
 def deepseek_generate(history, prompt, question):
@@ -183,9 +183,9 @@ async def get_deepseek_answer(history, prompt, question):
         answer = await asyncio.to_thread(deepseek_generate, history, prompt, question)
         print('end deepseek')
         print(answer)
-        return {"model": "DeepSeek V3", "answer": answer, "status": "success"}
+        return {"model": "DeepSeek 4", "answer": answer, "status": "success"}
     except Exception as e:
-        return {"model": "DeepSeek V3", "answer": str(e), "status": "failed"}
+        return {"model": "DeepSeek 4", "answer": "", "status": "failed"}
 #Generate answer using Grok 3
 def grok_generate(history, prompt, question):
     messages = [
@@ -248,7 +248,7 @@ async def get_mistral_answer(history, prompt, question):
         print(answer)
         return {"model": "Mistral Large", "answer": answer, "status": "success"}
     except Exception as e:
-        return {"model": "Mistral Large", "answer": str(e), "status": "failed"}
+        return {"model": "Mistral Large", "answer": "", "status": "failed"}
 #Generate answer using llama model of together.ai
 def llama_generate(history, prompt, question):
     response = together_client.chat.completions.create(
@@ -281,8 +281,11 @@ def summarize_opinion(responses):
 
     Any unique insights provided by individual models
     
-    Present the output in a clear and organized format using bullet points or numbered sections without any tables. The answer can't be empty."""
-
+    Present the output in a clear and organized format using bullet points or numbered sections without any tables. The answer can't be empty.
+    
+    And You have to include the model name and version I provided when you answer .
+    """
+    
     content = summary_prompt + "\n\n"
     for res in successful_answers:
         content += f"{res['model'].capitalize()} said: {res['answer']}\n\n"

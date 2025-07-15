@@ -29,11 +29,10 @@ def list():
   
   try:
     device_info = Devices.query.filter_by(device_id = device_id).first()
-    chathistory = ChatHistory.query.filter_by(user_id = device_info.email).all()
-    # list = [item.to_dict() for item in chathistory]
-    if not chathistory or len(chathistory) == 0:
-       chathistory = ChatHistory.query.order_by(func.random()).limit(30).all()
-    result_list = [{'id': item.id, 'question': item.question, 'level': item.level, 'chat_id': item.chat_id} for item in chathistory]
+    chathistory = ChatHistory.query.filter_by(user_id = device_info.email).all()    
+    random_history = ChatHistory.query.order_by(func.random()).limit(30).all()
+    combined_history = chathistory + random_history
+    result_list = [{'id': item.id, 'question': item.question, 'level': item.level, 'chat_id': item.chat_id} for item in combined_history]
     return jsonify(result_list), 200
   except Exception as e:
     print(e)
