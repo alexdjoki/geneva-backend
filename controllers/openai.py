@@ -122,10 +122,10 @@ async def get_claude_answer(history, prompt, question):
         answer = await asyncio.to_thread(claude_generate, history, prompt, question)
         print('end claude')
         print(answer)
-        return {"model": "Claude Opus 3", "answer": answer, "status": "success"}
+        return {"model": "Claude Opus 4", "answer": answer, "status": "success"}
     except Exception as e:
         print(str(e))
-        return {"model": "Claude Opus 3", "answer": "", "status": "failed"}
+        return {"model": "Claude Opus 4", "answer": "", "status": "failed"}
 
 # Generate answer using Gemini
 def gemini_generate(history, prompt, question):
@@ -288,7 +288,8 @@ def summarize_opinion(responses):
     
     content = summary_prompt + "\n\n"
     for res in successful_answers:
-        content += f"{res['model'].capitalize()} said: {res['answer']}\n\n"
+        if res['answer'] != "" :
+            content += f"{res['model'].capitalize()} said: {res['answer']}\n\n"
 
     response = deepseek_client.chat.completions.create(
         model="deepseek-chat",
