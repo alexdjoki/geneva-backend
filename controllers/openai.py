@@ -406,9 +406,10 @@ def get_answer(level, history, prompt, question):
         for result in results
     ]
     best_answer, opinion = analyze_result(results)
+    final_answer_with_images = insert_images(best_answer, question)
 
     return {
-        "final_answer": best_answer,
+        "final_answer": final_answer_with_images,
         "status_report": status_report,
         "opinion": opinion
     }
@@ -570,9 +571,9 @@ def get_news(level, query):
         for result in results
     ]
     best_answer, opinion = analyze_result(results)
-
+    final_answer_with_images = insert_images(best_answer, query)
     return {
-        "final_answer": best_answer,
+        "final_answer": final_answer_with_images,
         "status_report": status_report,
         "opinion": opinion
     }
@@ -679,7 +680,141 @@ def judge():
     question = data.get('question')
     return judge_system(question)
 
-#main route that generate the answer of user asked question.
+def get_contextual_image(paragraph, search_query):
+    """Fetches one highly relevant image for the specific paragraph"""
+    try:
+        params = {
+            "engine": "google_images",
+            "q": search_query,
+            "api_key": serpapi_key,
+            "num": 1,  # Only need one best match
+            "safe": "active"
+        }
+        result = GoogleSearch(params).get_dict()
+        images = result.get("images_results", [])
+        
+        if images:
+            return {
+                "thumbnail": images[0].get("thumbnail"),
+                "title": images[0].get("title", search_query)
+            }
+    except Exception as e:
+        print(f"Image search error for '{search_query}': {e}")
+    return None
+
+def extract_key_terms(text):
+    """Improved keyword extraction focusing on nouns and named entities"""
+    words = re.findall(r'\w+', text.lower())
+    stopwords = {'the','a','an','and','or','but','is','are','was','were','for','on','in','of','to','with'}
+    
+    # Filter stopwords and short words
+    words = [w for w in words if w not in stopwords and len(w) > 2]
+    
+    # Simple frequency analysis (can be enhanced with NLP)
+    word_freq = {}
+    for word in words:
+        word_freq[word] = word_freq.get(word, 0) + 1
+    
+    # Get top 3 most frequent meaningful words
+    return sorted(word_freq.keys(), key=lambda x: word_freq[x], reverse=True)[:3]
+def find_best_image_match(paragraph, images, used_indices):
+    """
+    Finds the most relevant image for the given paragraph using semantic matching
+    """
+    if not images:
+        return None
+        
+    # First try to find an exact match in image titles
+    paragraph_lower = paragraph.lower()
+    for i, img in enumerate(images):
+        if i not in used_indices and img['title'].lower() in paragraph_lower:
+            return i
+    
+    # Then try keyword matching
+    keywords = extract_keywords(paragraph)
+    best_score = 0
+    best_idx = None
+    
+    for i, img in enumerate(images):
+        if i in used_indices:
+            continue
+            
+        img_keywords = extract_keywords(img['title'])
+        score = len(set(keywords) & set(img_keywords))
+        
+        if score > best_score:
+            best_score = score
+            best_idx = i
+    
+    # Fallback: use the first unused image if no good match found
+    if best_idx is None:
+        for i in range(len(images)):
+            if i not in used_indices:
+                return i
+                
+    return best_idx
+
+def extract_keywords(text):
+    # Simple implementation - can be enhanced with NLP
+    words = re.findall(r'\w+', text.lower())
+    stopwords = {'the', 'a', 'an', 'in', 'on', 'at', 'and', 'or', 'of', 'to', 'is', 'are'}
+    return [w for w in words if w not in stopwords and len(w) > 3]
+    
+def insert_images(answer_text, query):
+    """
+    Enhanced image insertion that:
+    1. Splits answer into meaningful paragraphs
+    2. Fetches unique image for each paragraph
+    3. Embeds images contextually throughout
+    4. Maintains optimal image density
+    """
+    # Split into paragraphs while preserving formatting
+    paragraphs = [p.strip() for p in re.split(r'\n\n+', answer_text) if p.strip()]
+    if not paragraphs or len(paragraphs) == 1:
+        return answer_text
+
+    # Calculate optimal number of images (1 per 100-150 words)
+    word_count = sum(len(p.split()) for p in paragraphs)
+    num_images = min(
+        max(1, word_count // 120),  # Balanced density
+        len(paragraphs)             # Never more than paragraphs
+    )
+    
+    # Select strategic positions (avoid first/last, distribute evenly)
+    positions = []
+    step = max(1, len(paragraphs) // num_images)
+    for i in range(1, num_images + 1):
+        pos = min(i * step, len(paragraphs) - 2)  # -2 to avoid last paragraph
+        positions.append(pos)
+
+    # Process paragraphs and insert images
+    results = []
+    used_image_queries = set()
+    
+    for i, para in enumerate(paragraphs):
+        results.append(para)
+        
+        if i in positions:
+            # Create unique query combining main query + paragraph keywords
+            keywords = extract_key_terms(para)[:3]
+            img_query = f"{query} {' '.join(keywords)}".strip()
+            
+            # Ensure we don't use the same image twice
+            if img_query not in used_image_queries:
+                img = get_contextual_image(para, img_query)
+                used_image_queries.add(img_query)
+                
+                if img:
+                    img_html = f"""
+                    <div class="image-container-field">
+                        <img src="{img['thumbnail']}" alt="{img['title']}" 
+                             class="rounded-shadow-image">
+                        <div class="image-caption">{img['title']}</div>
+                    </div>
+                    """
+                    results.append(img_html)
+
+    return "\n\n".join(results)
 @openai_bp.route('/ask', methods=['POST'])
 def ask():
     data = request.get_json()
