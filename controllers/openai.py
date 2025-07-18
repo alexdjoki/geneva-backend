@@ -19,7 +19,7 @@ import json
 from models.auth import AccessKey
 from models.transactions import Transactions
 from datetime import datetime, timedelta
-
+import random
 
 load_dotenv()
 
@@ -753,68 +753,152 @@ def find_best_image_match(paragraph, images, used_indices):
                 return i
                 
     return best_idx
-
-def extract_keywords(text):
-    # Simple implementation - can be enhanced with NLP
-    words = re.findall(r'\w+', text.lower())
-    stopwords = {'the', 'a', 'an', 'in', 'on', 'at', 'and', 'or', 'of', 'to', 'is', 'are'}
-    return [w for w in words if w not in stopwords and len(w) > 3]
-    
 def insert_images(answer_text, query):
     """
-    Enhanced image insertion that:
-    1. Splits answer into meaningful paragraphs
-    2. Fetches unique image for each paragraph
-    3. Embeds images contextually throughout
-    4. Maintains optimal image density
+    Insert relevant images into the answer text with dynamic distribution:
+    - 1 image for very short answers (<150 words)
+    - 2-3 images for medium answers (150-400 words)
+    - 4-7 images for long articles (>400 words)
+    - Always includes a top image
     """
-    # Split into paragraphs while preserving formatting
-    paragraphs = [p.strip() for p in re.split(r'\n\n+', answer_text) if p.strip()]
-    if not paragraphs or len(paragraphs) == 1:
+    paragraphs = [p.strip() for p in re.split(r'(?<=\n\n)(?=\S)', answer_text) if p.strip()]
+    if not paragraphs:
         return answer_text
 
-    # Calculate optimal number of images (1 per 100-150 words)
-    word_count = sum(len(p.split()) for p in paragraphs)
-    num_images = min(
-        max(1, word_count // 120),  # Balanced density
-        len(paragraphs)             # Never more than paragraphs
-    )
+    # Calculate word count and determine image count
+    word_count = sum(len(re.findall(r'\w+', p)) for p in paragraphs)
     
-    # Select strategic positions (avoid first/last, distribute evenly)
-    positions = []
-    step = max(1, len(paragraphs) // num_images)
-    for i in range(1, num_images + 1):
-        pos = min(i * step, len(paragraphs) - 2)  # -2 to avoid last paragraph
-        positions.append(pos)
+    if word_count < 150:
+        num_images = 1
+    elif word_count < 400:
+        num_images = random.randint(2, 3)  # 2-3 images for medium content
+    else:
+        # 4-7 images for long content, scaling with length
+        num_images = min(7, max(4, word_count // 150))
+    
+    # Ensure we don't have more images than paragraphs
+    num_images = min(num_images, len(paragraphs) + 1)  # +1 for top image
+    
+    # Generate positions (always include top position 0)
+    positions = [0]  # Top image position
+    
+    # Calculate remaining positions for even distribution
+    if num_images > 1:
+        step = max(1, len(paragraphs) // (num_images - 1))
+        positions.extend(min(i * step, len(paragraphs) - 1) for i in range(1, num_images))
+    
+    # Remove duplicates and sort
+    positions = sorted(list(set(positions)))
+    
+    # Prepare diverse image queries
+    base_queries = [
+        f"{query}",
+        f"{query} product",
+        f"{query} details",
+        f"{query} example",
+        f"{query} photo",
+        f"{query} illustration",
+        f"{query} diagram"
+    ]
+    
+    # Generate context-specific queries for remaining positions
+    image_queries = base_queries[:num_images]
+    for i in range(len(base_queries), num_images):
+        if i < len(paragraphs):
+            keywords = extract_key_terms(paragraphs[positions[i]])[:2]
+            image_queries.append(f"{query} {' '.join(keywords)}")
+        else:
+            image_queries.append(random.choice(base_queries))
 
-    # Process paragraphs and insert images
-    results = []
-    used_image_queries = set()
+    # Fetch images concurrently
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     
+    try:
+        tasks = [fetch_image(q) for q in image_queries[:num_images]]
+        images = loop.run_until_complete(asyncio.gather(*tasks))
+    finally:
+        loop.close()
+
+    # Build the final content with images
+    results = []
+    img_idx = 0
+    
+    # Insert top image if available
+    if images and img_idx < len(images) and images[img_idx]:
+        results.append(format_image(images[img_idx]))
+        img_idx += 1
+    
+    # Insert content with remaining images
     for i, para in enumerate(paragraphs):
         results.append(para)
         
-        if i in positions:
-            # Create unique query combining main query + paragraph keywords
-            keywords = extract_key_terms(para)[:3]
-            img_query = f"{query} {' '.join(keywords)}".strip()
-            
-            # Ensure we don't use the same image twice
-            if img_query not in used_image_queries:
-                img = get_contextual_image(para, img_query)
-                used_image_queries.add(img_query)
-                
-                if img:
-                    img_html = f"""
-                    <div class="image-container-field">
-                        <img src="{img['thumbnail']}" alt="{img['title']}" 
-                             class="rounded-shadow-image">
-                        <div class="image-caption">{img['title']}</div>
-                    </div>
-                    """
-                    results.append(img_html)
+        # Insert image at designated positions
+        if i+1 in positions[1:] and img_idx < len(images) and images[img_idx]:
+            results.append(format_image(images[img_idx]))
+            img_idx += 1
 
     return "\n\n".join(results)
+
+def format_image(img_data):
+    """Format image HTML with responsive classes"""
+    return f"""
+    <div class="image-container-field">
+        <img src="{img_data['thumbnail']}" 
+             alt="{img_data['title']}" 
+             class="rounded-shadow-image responsive-img">
+        <div class="image-caption">{img_data['title']}</div>
+    </div>
+    """
+
+async def fetch_image(search_query):
+    """Fetch image with timeout and error handling"""
+    def _fetch():
+        try:
+            params = {
+                "engine": "google_images",
+                "q": search_query,
+                "api_key": serpapi_key,
+                "num": 1,
+                "safe": "active",
+                "hl": "en"
+            }
+            response = requests.get('https://serpapi.com/search', 
+                                 params=params)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("images_results"):
+                    return {
+                        "thumbnail": data["images_results"][0].get("thumbnail"),
+                        "title": data["images_results"][0].get("title", search_query)
+                    }
+        except Exception as e:
+            print(f"Image fetch error for '{search_query}': {str(e)}")
+        return None
+
+    return await asyncio.get_event_loop().run_in_executor(None, _fetch)
+
+def extract_key_terms(text):
+    """Enhanced keyword extraction with noun phrase detection"""
+    # Remove special characters and split
+    clean_text = re.sub(r'[^\w\s]', '', text)
+    words = re.findall(r'\b\w{3,}\b', clean_text.lower())
+    
+    # Custom stopwords list
+    stopwords = {
+        'the', 'a', 'an', 'in', 'on', 'at', 'and', 'or', 
+        'of', 'to', 'is', 'are', 'was', 'were', 'for', 'with'
+    }
+    
+    # Filter and count
+    filtered = [w for w in words if w not in stopwords]
+    freq = {}
+    for word in filtered:
+        freq[word] = freq.get(word, 0) + 1
+    
+    # Get top 3 most frequent meaningful words
+    return sorted(freq.keys(), key=lambda x: freq[x], reverse=True)[:3]
+
 @openai_bp.route('/ask', methods=['POST'])
 def ask():
     data = request.get_json()
