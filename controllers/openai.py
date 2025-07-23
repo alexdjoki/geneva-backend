@@ -183,9 +183,9 @@ async def get_deepseek_answer(history, prompt, question):
         answer = await asyncio.to_thread(deepseek_generate, history, prompt, question)
         print('end deepseek')
         print(answer)
-        return {"model": "DeepSeek 4", "answer": answer, "status": "success"}
+        return {"model": " Deepseek V3", "answer": answer, "status": "success"}
     except Exception as e:
-        return {"model": "DeepSeek 4", "answer": "", "status": "failed"}
+        return {"model": " Deepseek V3", "answer": "", "status": "failed"}
 #Generate answer using Grok 3
 def grok_generate(history, prompt, question):
     messages = [
@@ -413,7 +413,57 @@ def get_answer(level, history, prompt, question):
         "status_report": status_report,
         "opinion": opinion
     }
-
+def format_high_quality_image(img_data):
+    """Format high-res image with better HTML structure"""
+    return f"""
+    <div class="high-res-image-container">
+        <a href="{img_data['url']}" target="_blank" rel="noopener noreferrer">
+            <img src="{img_data['thumbnail']}" 
+                 alt="{img_data['title']}" 
+                 class="high-res-image"
+                 loading="lazy"
+                 onerror="this.src='{img_data['thumbnail'].replace('http://', 'https://')}'">
+        </a>
+        <div class="image-caption">
+            <strong>{img_data['title']}</strong><br>
+            <small>Source: {img_data.get('source', 'Unknown')}</small>
+        </div>
+    </div>
+    """
+async def fetch_high_quality_image(search_query):
+    """Fetch high-resolution image with size requirements"""
+    try:
+        params = {
+            "engine": "google_images",
+            "q": search_query,
+            "api_key": serpapi_key,
+            "num": 3,  # Get multiple results to find best quality
+            "safe": "active",
+            "hl": "en",
+            "img_size": "large",  # Only get large images
+            "img_type": "photo"   # Only get photos (not clipart etc)
+        }
+        
+        response = requests.get('https://serpapi.com/search', params=params)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("images_results"):
+                # Find the highest resolution image available
+                best_image = max(
+                    data["images_results"],
+                    key=lambda x: x.get("original_width", 0) * x.get("original_height", 0),
+                    default=None
+                )
+                if best_image:
+                    return {
+                        "url": best_image.get("original"),
+                        "thumbnail": best_image.get("original"),  # Use original for both
+                        "title": best_image.get("title", search_query),
+                        "source": best_image.get("source", "")
+                    }
+    except Exception as e:
+        print(f"High quality image fetch error: {e}")
+    return None
 #Get news using brave API
 def fetch_brave_news(query):
     headers = {
@@ -843,7 +893,7 @@ def insert_images(answer_text, query):
 def format_image(img_data):
     """Format image HTML with responsive classes"""
     return f"""
-    <div class="image-container-field">
+    <div class="image-container-field" onclick="window.open({img_data['thumbnail']})">
         <img src="{img_data['thumbnail']}" 
              alt="{img_data['title']}" 
              class="rounded-shadow-image responsive-img">
@@ -852,31 +902,38 @@ def format_image(img_data):
     """
 
 async def fetch_image(search_query):
-    """Fetch image with timeout and error handling"""
-    def _fetch():
-        try:
-            params = {
-                "engine": "google_images",
-                "q": search_query,
-                "api_key": serpapi_key,
-                "num": 1,
-                "safe": "active",
-                "hl": "en"
-            }
-            response = requests.get('https://serpapi.com/search', 
-                                 params=params)
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("images_results"):
+    try:
+        params = {
+            "engine": "google_images",
+            "q": search_query,
+            "api_key": serpapi_key,
+            "num": 3,  # Get multiple results to find best quality
+            "safe": "active",
+            "hl": "en",
+            "img_size": "large",  # Only get large images
+            "img_type": "photo"   # Only get photos (not clipart etc)
+        }
+        
+        response = requests.get('https://serpapi.com/search', params=params)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("images_results"):
+                # Find the highest resolution image available
+                best_image = max(
+                    data["images_results"],
+                    key=lambda x: x.get("original_width", 0) * x.get("original_height", 0),
+                    default=None
+                )
+                if best_image:
                     return {
-                        "thumbnail": data["images_results"][0].get("thumbnail"),
-                        "title": data["images_results"][0].get("title", search_query)
+                        "url": best_image.get("original"),
+                        "thumbnail": best_image.get("original"),  # Use original for both
+                        "title": best_image.get("title", search_query),
+                        "source": best_image.get("source", "")
                     }
-        except Exception as e:
-            print(f"Image fetch error for '{search_query}': {str(e)}")
-        return None
-
-    return await asyncio.get_event_loop().run_in_executor(None, _fetch)
+    except Exception as e:
+        print(f"High quality image fetch error: {e}")
+    return None
 
 def extract_key_terms(text):
     """Enhanced keyword extraction with noun phrase detection"""
@@ -930,6 +987,7 @@ def ask():
     Avoid including disclaimers such as "as of my last update." Focus on delivering useful, confident information without referencing time limitations.
     And about answers and news, you have not to mention source that you got the new data.
     You have to provide accurate and detailed answers while satisfying the conditions above.
+    IMPORTANT: If asked about any, you MUST generate the complete report with all standard sections (Introduction, Methods, Results, Discussion, Conclusion, References). Do not stop mid-report."
     """
 
     print(prompt)
@@ -954,8 +1012,6 @@ def ask():
     db.session.add(new_history)
     db.session.commit()
     return jsonify({"question": question, "answer": result["final_answer"], "level": judge_output['level'], "status_report": result["status_report"], "opinion": result["opinion"]})
-
-
 
 async def generate_answer(level, history, prompt, query):
     try:
