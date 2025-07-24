@@ -129,7 +129,6 @@ async def get_claude_answer(history, prompt, question):
 
 # Generate answer using Gemini
 def gemini_generate(history, prompt, question):
-    # prompt = flatten_messages(messages)
     messages = []
     for element in history:
         if element['type'] == 'question':
@@ -413,25 +412,73 @@ def get_answer(level, history, prompt, question):
         "status_report": status_report,
         "opinion": opinion
     }
-def format_high_quality_image(img_data):
-    """Format high-res image with better HTML structure"""
+
+def format_top_image(img_data):
+    """Format top image HTML with full width"""
     return f"""
-    <div class="high-res-image-container">
-        <a href="{img_data['url']}" target="_blank" rel="noopener noreferrer">
+    <div class="image-container-field" onclick="window.open('{img_data['thumbnail']}')">
+        <img src="{img_data['thumbnail']}" 
+             alt="{img_data['title']}" 
+             class="full-width-image responsive-img">
+        <div class="image-caption">{img_data['title']}</div>
+    </div>
+    """
+
+def format_bottom_image(img_data):
+    """Format bottom image HTML with centered large display"""
+    return f"""
+    <div style="text-align: center; margin: 10px 0;">
+        <div class="bottom-image-container" onclick="window.open('{img_data['thumbnail']}')">
             <img src="{img_data['thumbnail']}" 
                  alt="{img_data['title']}" 
-                 class="high-res-image"
-                 loading="lazy"
-                 onerror="this.src='{img_data['thumbnail'].replace('http://', 'https://')}'">
-        </a>
-        <div class="image-caption">
-            <strong>{img_data['title']}</strong><br>
-            <small>Source: {img_data.get('source', 'Unknown')}</small>
+                 style="max-width: 90%; height: auto; margin: 0 auto; display: block; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">
+            <div class="image-caption" style="text-align: center; margin-top: 10px; font-size: 0.9em;">{img_data['title']}</div>
         </div>
     </div>
     """
-async def fetch_high_quality_image(search_query):
-    """Fetch high-resolution image with size requirements"""
+
+def insert_images(answer_text, query):
+    """
+    Insert only 2 relevant images into the answer text:
+    - 1 big image at the top
+    - 1 big centered image at the bottom
+    """
+    paragraphs = [p.strip() for p in re.split(r'(?<=\n\n)(?=\S)', answer_text) if p.strip()]
+    if not paragraphs:
+        return answer_text
+
+    # Fetch top and bottom images
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    try:
+        # Get two different image queries to increase variety
+        queries = [
+            f"{query} high quality",
+            f"{query} detailed"
+        ]
+        tasks = [fetch_image(q) for q in queries[:2]]
+        images = loop.run_until_complete(asyncio.gather(*tasks))
+    finally:
+        loop.close()
+
+    # Build the final content with images
+    results = []
+    
+    # Insert top image if available
+    if images and len(images) > 0 and images[0]:
+        results.append(format_top_image(images[0]))
+    
+    # Add all paragraphs
+    results.extend(paragraphs)
+    
+    # Insert bottom image if available
+    if images and len(images) > 1 and images[1]:
+        results.append(format_bottom_image(images[1]))
+
+    return "\n\n".join(results)
+
+async def fetch_image(search_query):
     try:
         params = {
             "engine": "google_images",
@@ -464,6 +511,7 @@ async def fetch_high_quality_image(search_query):
     except Exception as e:
         print(f"High quality image fetch error: {e}")
     return None
+
 #Get news using brave API
 def fetch_brave_news(query):
     headers = {
@@ -548,7 +596,6 @@ def retrieve_news(query):
         "query": query,
         "sources_used": list({a['source'] for a in sorted_articles[:4]}),
         "compressed_summary": compressed_summary
-
     }
 
 #Analyze the news by AI models using gathering. 3/5/7
@@ -676,7 +723,7 @@ def judge_system(question, history = []):
 
         Never explain your reasoning - only output "Yes" or "No".
 
-    3. **used_in_context**: Determine if the current question depends on or references the history. Say `true` if it’s a follow-up or refers to anything previously discussed. Say `false` if it’s a completely new topic.
+    3. **used_in_context**: Determine if the current question depends on or references the history. Say `true` if it's a follow-up or refers to anything previously discussed. Say `false` if it's a completely new topic.
 
     4. **updated_question**:
         - If `used_in_context` is `true`, rewrite the question so that it is fully self-contained, including the necessary context from the conversation history.
@@ -724,216 +771,10 @@ def judge_system(question, history = []):
 
 # Test route
 @openai_bp.route('/judge', methods=['POST'])
-
 def judge():
     data = request.get_json()
     question = data.get('question')
     return judge_system(question)
-
-def get_contextual_image(paragraph, search_query):
-    """Fetches one highly relevant image for the specific paragraph"""
-    try:
-        params = {
-            "engine": "google_images",
-            "q": search_query,
-            "api_key": serpapi_key,
-            "num": 1,  # Only need one best match
-            "safe": "active"
-        }
-        result = GoogleSearch(params).get_dict()
-        images = result.get("images_results", [])
-        
-        if images:
-            return {
-                "thumbnail": images[0].get("thumbnail"),
-                "title": images[0].get("title", search_query)
-            }
-    except Exception as e:
-        print(f"Image search error for '{search_query}': {e}")
-    return None
-
-def extract_key_terms(text):
-    """Improved keyword extraction focusing on nouns and named entities"""
-    words = re.findall(r'\w+', text.lower())
-    stopwords = {'the','a','an','and','or','but','is','are','was','were','for','on','in','of','to','with'}
-    
-    # Filter stopwords and short words
-    words = [w for w in words if w not in stopwords and len(w) > 2]
-    
-    # Simple frequency analysis (can be enhanced with NLP)
-    word_freq = {}
-    for word in words:
-        word_freq[word] = word_freq.get(word, 0) + 1
-    
-    # Get top 3 most frequent meaningful words
-    return sorted(word_freq.keys(), key=lambda x: word_freq[x], reverse=True)[:3]
-def find_best_image_match(paragraph, images, used_indices):
-    """
-    Finds the most relevant image for the given paragraph using semantic matching
-    """
-    if not images:
-        return None
-        
-    # First try to find an exact match in image titles
-    paragraph_lower = paragraph.lower()
-    for i, img in enumerate(images):
-        if i not in used_indices and img['title'].lower() in paragraph_lower:
-            return i
-    
-    # Then try keyword matching
-    keywords = extract_keywords(paragraph)
-    best_score = 0
-    best_idx = None
-    
-    for i, img in enumerate(images):
-        if i in used_indices:
-            continue
-            
-        img_keywords = extract_keywords(img['title'])
-        score = len(set(keywords) & set(img_keywords))
-        
-        if score > best_score:
-            best_score = score
-            best_idx = i
-    
-    # Fallback: use the first unused image if no good match found
-    if best_idx is None:
-        for i in range(len(images)):
-            if i not in used_indices:
-                return i
-                
-    return best_idx
-def insert_images(answer_text, query):
-    """
-    Insert relevant images into the answer text with dynamic distribution:
-    - 1 image for very short answers (<150 words)
-    - 2-3 images for medium answers (150-400 words)
-    - 4-7 images for long articles (>400 words)
-    - Always includes a top image
-    """
-    paragraphs = [p.strip() for p in re.split(r'(?<=\n\n)(?=\S)', answer_text) if p.strip()]
-    if not paragraphs:
-        return answer_text
-
-    # Calculate word count and determine image count
-    word_count = sum(len(re.findall(r'\w+', p)) for p in paragraphs)
-    
-    if word_count < 150:
-        num_images = 1
-    elif word_count < 400:
-        num_images = random.randint(2, 3)  # 2-3 images for medium content
-    else:
-        # 4-7 images for long content, scaling with length
-        num_images = min(7, max(4, word_count // 150))
-    
-    # Ensure we don't have more images than paragraphs
-    num_images = min(num_images, len(paragraphs) + 1)  # +1 for top image
-    
-    # Generate positions (always include top position 0)
-    positions = [0]  # Top image position
-    
-    # Calculate remaining positions for even distribution
-    if num_images > 1:
-        step = max(1, len(paragraphs) // (num_images - 1))
-        positions.extend(min(i * step, len(paragraphs) - 1) for i in range(1, num_images))
-    
-    # Remove duplicates and sort
-    positions = sorted(list(set(positions)))
-    
-    # Prepare diverse image queries
-    base_queries = [
-        f"{query}",
-        f"{query} product",
-        f"{query} details",
-        f"{query} example",
-        f"{query} photo",
-        f"{query} illustration",
-        f"{query} diagram"
-    ]
-    
-    # Generate context-specific queries for remaining positions
-    image_queries = base_queries[:num_images]
-    for i in range(len(base_queries), num_images):
-        if i < len(paragraphs):
-            keywords = extract_key_terms(paragraphs[positions[i]])[:2]
-            image_queries.append(f"{query} {' '.join(keywords)}")
-        else:
-            image_queries.append(random.choice(base_queries))
-
-    # Fetch images concurrently
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
-    try:
-        tasks = [fetch_image(q) for q in image_queries[:num_images]]
-        images = loop.run_until_complete(asyncio.gather(*tasks))
-    finally:
-        loop.close()
-
-    # Build the final content with images
-    results = []
-    img_idx = 0
-    
-    # Insert top image if available
-    if images and img_idx < len(images) and images[img_idx]:
-        results.append(format_image(images[img_idx]))
-        img_idx += 1
-    
-    # Insert content with remaining images
-    for i, para in enumerate(paragraphs):
-        results.append(para)
-        
-        # Insert image at designated positions
-        if i+1 in positions[1:] and img_idx < len(images) and images[img_idx]:
-            results.append(format_image(images[img_idx]))
-            img_idx += 1
-
-    return "\n\n".join(results)
-
-def format_image(img_data):
-    """Format image HTML with responsive classes"""
-    return f"""
-    <div class="image-container-field" onclick="window.open('{img_data['thumbnail']}')">
-        <img src="{img_data['thumbnail']}" 
-             alt="{img_data['title']}" 
-             class="rounded-shadow-image responsive-img">
-        <div class="image-caption">{img_data['title']}</div>
-    </div>
-    """
-
-async def fetch_image(search_query):
-    try:
-        params = {
-            "engine": "google_images",
-            "q": search_query,
-            "api_key": serpapi_key,
-            "num": 3,  # Get multiple results to find best quality
-            "safe": "active",
-            "hl": "en",
-            "img_size": "large",  # Only get large images
-            "img_type": "photo"   # Only get photos (not clipart etc)
-        }
-        
-        response = requests.get('https://serpapi.com/search', params=params)
-        if response.status_code == 200:
-            data = response.json()
-            if data.get("images_results"):
-                # Find the highest resolution image available
-                best_image = max(
-                    data["images_results"],
-                    key=lambda x: x.get("original_width", 0) * x.get("original_height", 0),
-                    default=None
-                )
-                if best_image:
-                    return {
-                        "url": best_image.get("original"),
-                        "thumbnail": best_image.get("original"),  # Use original for both
-                        "title": best_image.get("title", search_query),
-                        "source": best_image.get("source", "")
-                    }
-    except Exception as e:
-        print(f"High quality image fetch error: {e}")
-    return None
 
 def extract_key_terms(text):
     """Enhanced keyword extraction with noun phrase detection"""
@@ -1062,6 +903,7 @@ async def get_product(query):
         return answer
     except Exception as e:
         raise RuntimeError(f"Searching product failed: {str(e)}")
+
 #Generate answer of user asked question and search products mentioned in user asked question.
 #If last_year: Yes, get news and analyze news with AI models 3/5/7. After that combine answer and searched products.
 #IF last_year: No, generate answer with AI models 3/5/7. After that combine answer and searched products.
@@ -1336,7 +1178,6 @@ def search_product(query):
 
 #main route that get the user wanted products
 @openai_bp.route('/product', methods=['POST'])
-
 def product():
     data = request.get_json()
     query = data.get('query')
@@ -1357,7 +1198,6 @@ def product():
 
 # Test route
 @openai_bp.route('/search-product', methods=['POST'])
-
 def search_products():
     data = request.get_json()
     query = data.get('question')
