@@ -893,7 +893,7 @@ def insert_images(answer_text, query):
 def format_image(img_data):
     """Format image HTML with responsive classes"""
     return f"""
-    <div class="image-container-field" onclick="window.open({img_data['thumbnail']})">
+    <div class="image-container-field" onclick="window.open('{img_data['thumbnail']}')">
         <img src="{img_data['thumbnail']}" 
              alt="{img_data['title']}" 
              class="rounded-shadow-image responsive-img">
