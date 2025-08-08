@@ -7,7 +7,7 @@ class AccessKey(BaseModel):
     device_id = db.Column(db.Text, nullable=False)
     access_key = db.Column(db.Text, nullable=False)
     status = db.Column(db.Integer, nullable=False)
-    email = db.Column(db.Text, nullable=False)
+    email = db.Column(db.String(255), nullable=False, server_default='')
     valid_date = db.Column(db.DateTime, nullable=False)
     count = db.Column(db.Integer, nullable=False)
 

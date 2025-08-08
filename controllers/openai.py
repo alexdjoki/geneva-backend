@@ -267,24 +267,41 @@ async def get_llama_answer(history, prompt, question):
         return {"model": "Llama 4", "answer": str(e), "status": "failed"}
 
 #Summarize the opinion from answers of each models
-def summarize_opinion(responses):
+def summarize_opinion(responses, mode):
     successful_answers = [res for res in responses if res["status"] == "success"]
     if not successful_answers:
         return "All models failed to answer."
+    if mode == "consensus":
+        summary_prompt = """
+            > You will be given answers from several AI models. Compare them and deliver your analysis as follows:
+            >
+            > 1. **Key Points of Agreement:** List the main ideas all models share.  
+            > 2. **Notable Differences:** Highlight where their conclusions diverge.  
+            > 3. **Unique Insights:** Call out any perspective offered by only one model.  
+            >
+            > - Refer to each model as **“Model {number}”** (e.g. “Model1” “Model2” “Model3”) if you need to cite individual contributions. 
+            > - Use **numbered sections** or **bullet points**—**no tables**.  
+            > - Do **not** include actual model names or versions.  
+            > - Ensure the response is **never empty**.
+        """
+    if mode == "blaze":
+        summary_prompt = """
+            > You will be given answers from several AI models. Summarize their collective reasoning as follows:
+            >
+            > 1. Describe how the models think about the topic, beginning with phrasing like “The models agree that…,” “The models opine that…,” or “The models think that….”  
+            >    - Start with a single introductory phrase like “The models agree that…” or “The models think that….”  
+            >    - After that, present the shared points directly—don’t repeat the introductory phrase for each bullet.
+            > - Refer to each model as **“Model {number}”** (e.g. “Model1” “Model2” “Model3”) if you need to cite individual contributions.  
+            > - Use **numbered sections** or **bullet points**—**no tables**.  
+            > - Do **not** include actual model names or versions.  
+            > - Do **not** mention unique insights or notable differences. 
+            > - Don't mention "both" but just "model 1" and "model 2" or "all models". 
+            > - Ensure the response is **never empty**.
+            > - For each section, don't try to use "The models agree that ... " except fisrt beginning of the summary, but just mention contents.
+        """
 
-    summary_prompt = """Given the answers from different AI models, provide a structured comparison including:
-
-    Key points of agreement
-
-    Notable differences
-
-    Any unique insights provided by individual models
-    
-    Present the output in a clear and organized format using bullet points or numbered sections without any tables. The answer can't be empty.
-    
-    And You have to include the model name and version I provided when you answer .
-    """
-    
+    print("-----------------SUMMARY PROMPT------------------")
+    print(summary_prompt)
     content = summary_prompt + "\n\n"
     for res in successful_answers:
         if res['answer'] != "" :
@@ -300,9 +317,9 @@ def summarize_opinion(responses):
 
     return response.choices[0].message.content.strip()
 
-async def get_opinion(responses):
+async def get_opinion(responses, mode):
     try:
-        answer = await asyncio.to_thread(summarize_opinion, responses)
+        answer = await asyncio.to_thread(summarize_opinion, responses, mode)
         return answer
     except Exception as e:
         raise RuntimeError(f"Summarizing failed: {str(e)}")
@@ -346,7 +363,7 @@ async def get_best_answer(responses):
     except Exception as e:
         raise RuntimeError(f"Picking best answer failed: {str(e)}")
 #Generate answer of each models using gathering 3/5/7
-def generate_answers(level, history, prompt, question):
+def generate_answers(mode, level, history, prompt, question):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     tasks = []
@@ -354,43 +371,50 @@ def generate_answers(level, history, prompt, question):
     print(prompt)
     print("-------------Question-------------")
     print(question)
-    if level == 'Easy':
-        tasks = [
-            get_llama_answer(history, prompt, question),
-            get_deepseek_answer(history, prompt, question),
-            get_grok_answer(history, prompt, question),
-        ]
-    if level == 'Medium':
-        tasks = [
-            get_gemini_answer(history, prompt, question),
-            get_mistral_answer(history, prompt, question),
-            get_llama_answer(history, prompt, question),
-            get_deepseek_answer(history, prompt, question),
-            get_grok_answer(history, prompt, question),
-        ]
-    if level == 'Complex':
+    if mode == 'blaze':
         tasks = [
             get_gpt4o_answer(history, prompt, question),
-            get_claude_answer(history, prompt, question),
-            get_gemini_answer(history, prompt, question),
-            get_mistral_answer(history, prompt, question),
-            get_llama_answer(history, prompt, question),
             get_deepseek_answer(history, prompt, question),
-            get_grok_answer(history, prompt, question),
         ]
+    else:
+        if level == 'Easy':
+            tasks = [
+                get_llama_answer(history, prompt, question),
+                get_deepseek_answer(history, prompt, question),
+                get_grok_answer(history, prompt, question),
+            ]
+        if level == 'Medium':
+            tasks = [
+                get_gemini_answer(history, prompt, question),
+                get_mistral_answer(history, prompt, question),
+                get_llama_answer(history, prompt, question),
+                get_deepseek_answer(history, prompt, question),
+                get_grok_answer(history, prompt, question),
+            ]
+        if level == 'Complex':
+            tasks = [
+                get_gpt4o_answer(history, prompt, question),
+                get_claude_answer(history, prompt, question),
+                get_gemini_answer(history, prompt, question),
+                get_mistral_answer(history, prompt, question),
+                get_llama_answer(history, prompt, question),
+                get_deepseek_answer(history, prompt, question),
+                get_grok_answer(history, prompt, question),
+            ]
     results = loop.run_until_complete(asyncio.gather(*tasks))
     loop.close()
 
     return results
 
 #Pick best answer and summarize the opinion from answers of each models
-def analyze_result(results):
+def analyze_result(results, mode):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-
+    print("\n------------ANALYZE RESULT------------\n")
+    print(results)
     summarize = loop.run_until_complete(asyncio.gather(
         get_best_answer(results),
-        get_opinion(results)
+        get_opinion(results, mode)
     ))
     best_answer, opinion = summarize
     loop.close()
@@ -398,13 +422,13 @@ def analyze_result(results):
     return best_answer, opinion
 
 #Generate answer of user asked(findal_answer: main answer, status_report: AI models success report, opinion: summarized opinion)
-def get_answer(level, history, prompt, question):
-    results = generate_answers(level, history, prompt, question)
+def get_answer(mode, level, history, prompt, question):
+    results = generate_answers(mode, level, history, prompt, question)
     status_report = [
         {key: value for key, value in result.items() if key != 'answer'}
         for result in results
     ]
-    best_answer, opinion = analyze_result(results)
+    best_answer, opinion = analyze_result(results, mode)
     final_answer_with_images = insert_images(best_answer, question)
 
     return {
@@ -603,6 +627,11 @@ def generate_news(level, history, prompt, question):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     tasks = []
+    if level == 'blaze':
+        tasks = [
+            get_gpt4o_answer(history, prompt, question),
+            get_deepseek_answer(history, prompt, question),
+        ]
     if level == 'Easy':
         tasks = [
             get_llama_answer(history, prompt, question),
@@ -633,7 +662,7 @@ def generate_news(level, history, prompt, question):
     return results
 
 #Get the news using google search and brave API. After that Analyze the searched results using AI models
-def get_news(level, query):
+def get_news(mode, level, query):
     result = retrieve_news(query)
     print("Result for retrieved news")
     print(result)
@@ -667,7 +696,7 @@ def get_news(level, query):
         {key: value for key, value in result.items() if key != 'answer'}
         for result in results
     ]
-    best_answer, opinion = analyze_result(results)
+    best_answer, opinion = analyze_result(results, mode)
     final_answer_with_images = insert_images(best_answer, query)
     return {
         "final_answer": final_answer_with_images,
@@ -804,7 +833,7 @@ def ask():
     user_id = data.get("user_id")
     history = data.get("history")
     question = data.get("question")
-
+    mode = data.get("mode")
     # valid = check_valid(user_id)
     #
     # if valid == False:
@@ -843,20 +872,21 @@ def ask():
     if len(judge_output['product']) > 0:
         judge_output['level'], result = analyze_product(judge_output['level'], judge_output['last_year'], history, prompt, question)
     elif judge_output['last_year'] == 'Yes':
-        result = get_news(judge_output['level'], question)
+        result = get_news(mode, judge_output['level'], question)
+
     else:
-        result = get_answer(judge_output['level'], history, prompt, question)
+        result = get_answer(mode, judge_output['level'], history, prompt, question)
     token = Devices.query.filter_by(device_id=user_id).first()
     if token:
         user_id = token.email
-    new_history = ChatHistory(user_id = user_id, answer = result["final_answer"], status_report = json.dumps(result["status_report"]), opinion = result["opinion"], chat_id = chat_id, question = question, level = judge_output['level'], created_at = datetime.now(), updated_at = datetime.now())
+    new_history = ChatHistory(user_id = user_id, answer = result["final_answer"], status_report = json.dumps(result["status_report"]), opinion = result["opinion"], chat_id = chat_id, question = question, mode = mode, level = judge_output['level'], created_at = datetime.now(), updated_at = datetime.now())
     db.session.add(new_history)
     db.session.commit()
-    return jsonify({"question": question, "answer": result["final_answer"], "level": judge_output['level'], "status_report": result["status_report"], "opinion": result["opinion"]})
+    return jsonify({"question": question, "mode": mode, "answer": result["final_answer"], "level": judge_output['level'], "status_report": result["status_report"], "opinion": result["opinion"]})
 
-async def generate_answer(level, history, prompt, query):
+async def generate_answer(mode, level, history, prompt, query):
     try:
-        answer = await asyncio.to_thread(get_answer, level, history, prompt, query)
+        answer = await asyncio.to_thread(get_answer, mode, level, history, prompt, query)
         return answer
     except Exception as e:
         raise RuntimeError(f"Generating answer failed: {str(e)}")
@@ -890,9 +920,9 @@ def check_valid(user_id):
             return False
     return False
 
-async def search_news(level, query):
+async def search_news(mode, level, query):
     try:
-        answer = await asyncio.to_thread(get_news, level, query)
+        answer = await asyncio.to_thread(get_news, mode, level, query)
         return answer
     except Exception as e:
         raise RuntimeError(f"Searching news failed: {str(e)}")
@@ -907,7 +937,7 @@ async def get_product(query):
 #Generate answer of user asked question and search products mentioned in user asked question.
 #If last_year: Yes, get news and analyze news with AI models 3/5/7. After that combine answer and searched products.
 #IF last_year: No, generate answer with AI models 3/5/7. After that combine answer and searched products.
-def compare_product(level, last_year, history, prompt, query, products):
+def compare_product(mode, level, last_year, history, prompt, query, products):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
@@ -923,7 +953,7 @@ def compare_product(level, last_year, history, prompt, query, products):
     # Run generate_answer and all product fetches concurrently
     if last_year.lower() == 'yes':
         analyze = loop.run_until_complete(asyncio.gather(
-            search_news(level, query),
+            search_news(mode, level, query),
         ))
     else:
         analyze = loop.run_until_complete(asyncio.gather(
@@ -956,7 +986,7 @@ def compare_product(level, last_year, history, prompt, query, products):
 #If user just want only looking products search products and return.
 #If user want product's analyzed data, compared data, review and etc, Combine analyzed data with AI answers and products list.
 
-def analyze_product(level, last_year, history, prompt, query):
+def analyze_product(mode, level, last_year, history, prompt, query):
     analyze_prompt = f"""
     You are an AI assistant that analyzes product-related user queries.
 
@@ -1064,7 +1094,7 @@ def analyze_product(level, last_year, history, prompt, query):
     result = {}
     if response['intent'] == 'compare':
         prompt = compare_prompt
-    result = compare_product(level, last_year, history, prompt, query, response['products'])
+    result = compare_product(mode, level, last_year, history, prompt, query, response['products'])
     return "compare_product", result
 
 #Analyzed the user asked product and get the exact information of product

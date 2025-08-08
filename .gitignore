@@ -2,4 +2,9 @@
 *.pyc
 static
 .env
+<<<<<<< HEAD
 venv
+=======
+venv
+*.sql
+>>>>>>> blaze

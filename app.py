@@ -3,10 +3,12 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_jwt_extended import JWTManager
 from settings import Config
+from flask_migrate import Migrate
 
 db = SQLAlchemy()
 bcrypt = Bcrypt()
 jwt = JWTManager()
+migrate = Migrate() 
 
 def create_app():
     app = Flask(__name__)
@@ -15,8 +17,7 @@ def create_app():
     db.init_app(app)
     bcrypt.init_app(app)
     jwt.init_app(app)
-
-
+    migrate.init_app(app, db)
 
     from controllers.openai import openai_bp
     app.register_blueprint(openai_bp, url_prefix='/openai')

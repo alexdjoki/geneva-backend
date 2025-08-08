@@ -7,6 +7,7 @@ class ChatHistory(BaseModel):
     user_id = db.Column(db.Text, nullable=False)
     chat_id = db.Column(db.Integer, nullable=False)
     question = db.Column(db.Text, nullable=False)
+    mode = db.Column(db.Text, nullable=False)
     answer = db.Column(db.Text, nullable=False)
     status_report = db.Column(db.Text, nullable=False)
     opinion = db.Column(db.Text, nullable=False)
@@ -18,6 +19,7 @@ class ChatHistory(BaseModel):
             'user_id': self.user_id,
             'chat_id': self.chat_id,
             'question': self.question,
+            'mode': self.mode,
             'answer': self.answer,
             'status_report': self.status_report,
             'opinion': self.opinion,
