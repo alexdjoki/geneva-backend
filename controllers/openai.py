@@ -429,7 +429,11 @@ def get_answer(mode, level, history, prompt, question):
         for result in results
     ]
     best_answer, opinion = analyze_result(results, mode)
-    final_answer_with_images = insert_images(best_answer, question)
+
+    if mode == 'consensus':
+        final_answer_with_images = insert_images(best_answer, question)
+    if mode == 'blaze':
+        final_answer_with_images = best_answer
 
     return {
         "final_answer": final_answer_with_images,
@@ -601,7 +605,7 @@ def retrieve_news(query):
 
     # Merge + deduplicate
     all_articles = google_articles + brave_articles
-    print("All Articles")
+    print("------All Articles---------------")
     print(all_articles)
     seen_urls = set()
     unique_articles = []
@@ -623,39 +627,40 @@ def retrieve_news(query):
     }
 
 #Analyze the news by AI models using gathering. 3/5/7
-def generate_news(level, history, prompt, question):
+def generate_news(mode, level, history, prompt, question):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     tasks = []
-    if level == 'blaze':
+    if level == 'mode':
         tasks = [
             get_gpt4o_answer(history, prompt, question),
             get_deepseek_answer(history, prompt, question),
         ]
-    if level == 'Easy':
-        tasks = [
-            get_llama_answer(history, prompt, question),
-            get_deepseek_answer(history, prompt, question),
-            get_mistral_answer(history, prompt, question),
-        ]
-    if level == 'Medium':
-        tasks = [
-            get_gemini_answer(history, prompt, question),
-            get_mistral_answer(history, prompt, question),
-            get_llama_answer(history, prompt, question),
-            get_deepseek_answer(history, prompt, question),
-            get_gpt4o_answer(history, prompt, question),
-        ]
-    if level == 'Complex':
-        tasks = [
-            get_gpt4o_answer(history, prompt, question),
-            get_claude_answer(history, prompt, question),
-            get_gemini_answer(history, prompt, question),
-            get_mistral_answer(history, prompt, question),
-            get_llama_answer(history, prompt, question),
-            get_deepseek_answer(history, prompt, question),
-            get_grok_answer(history, prompt, question),
-        ]
+    else:
+        if level == 'Easy':
+            tasks = [
+                get_llama_answer(history, prompt, question),
+                get_deepseek_answer(history, prompt, question),
+                get_mistral_answer(history, prompt, question),
+            ]
+        if level == 'Medium':
+            tasks = [
+                get_gemini_answer(history, prompt, question),
+                get_mistral_answer(history, prompt, question),
+                get_llama_answer(history, prompt, question),
+                get_deepseek_answer(history, prompt, question),
+                get_gpt4o_answer(history, prompt, question),
+            ]
+        if level == 'Complex':
+            tasks = [
+                get_gpt4o_answer(history, prompt, question),
+                get_claude_answer(history, prompt, question),
+                get_gemini_answer(history, prompt, question),
+                get_mistral_answer(history, prompt, question),
+                get_llama_answer(history, prompt, question),
+                get_deepseek_answer(history, prompt, question),
+                get_grok_answer(history, prompt, question),
+            ]
     results = loop.run_until_complete(asyncio.gather(*tasks))
     loop.close()
 
@@ -664,9 +669,9 @@ def generate_news(level, history, prompt, question):
 #Get the news using google search and brave API. After that Analyze the searched results using AI models
 def get_news(mode, level, query):
     result = retrieve_news(query)
-    print("Result for retrieved news")
+    print("------------Result for retrieved news-----------------")
     print(result)
-    print('start analyzing news')
+    print('---------------start analyzing news----------------')
     prompt = "Summarize the provided news search results clearly and objectively for a human reader."
 
     question = f"""
@@ -689,15 +694,20 @@ def get_news(mode, level, query):
     {result['compressed_summary']}
     """
 
-    results = generate_news(level, [], prompt, question)
-    print("News for Generated from news")
+    results = generate_news(mode, level, [], prompt, question)
+    print("-------News for Generated from news-----------")
     print(results)
+
     status_report = [
         {key: value for key, value in result.items() if key != 'answer'}
         for result in results
     ]
     best_answer, opinion = analyze_result(results, mode)
-    final_answer_with_images = insert_images(best_answer, query)
+
+    if mode == 'consensus':
+        final_answer_with_images = insert_images(best_answer, query)
+    if mode == 'blaze':
+        final_answer_with_images = best_answer
     return {
         "final_answer": final_answer_with_images,
         "status_report": status_report,
@@ -714,65 +724,116 @@ def retrieve():
 #level: question complexity, last_year: user want recent_data or not, used_in_context: user asked question is related with previous question or not.
 #updated_question: if used_in_context is yes, generated updated_question(ex. question: explain more about above product. updated_question: explain more about PS5 )
 #product: user wanted products list
-def judge_system(question, history = []):
+def judge_system(mode, question, history = []):
     history_text = ""
     for item in history:
         text = item.get('text', '')  # This won't raise KeyError
         prefix = "User" if item["type"] == "question" else "Assistant"
         history_text += f"{prefix}: {text}\n"
 
-    expected_output = """
-        {
-            "level": "Easy"
-            "last_year": "Yes"
-            "used_in_context": true or false,
-            "updated_question": "Rewritten question if used_in_context is true, otherwise empty string"
-            "product": ["Product A", "Product B"] or []
-        }
-    """
-    judge_prompt = f"""
-    You are an AI assistant responsible for classifying user queries.
+    if mode == 'blaze':
+        expected_output = """
+            {
+                "level": "blaze",
+                "last_year": "Yes",
+                "used_in_context": true or false,
+                "updated_question": "Rewritten question if used_in_context is true, otherwise empty string",
+                "product": []
+            }
+        """
+        judge_prompt = f"""
+        You are an AI assistant responsible for classifying user queries.
 
-    1. **Difficulty Assessment**: Categorize the complexity of the question as one of the following: "Easy", "Medium", or "Complex".
-    
-    2. Determine if the user's query requires information newer than your knowledge cutoff date. Use these rules:
+        1. **Difficulty Assessment**: Categorize the complexity of the question as one of the following: "Easy", "Medium", or "Complex".
+        
+        2. Determine if the user's query requires information newer than your knowledge cutoff date. Use these rules:
 
-        1) Respond ONLY with "Yes" if:
-            - The question asks about events/developments after your cutoff
-            - Uses terms like "current", "latest", "recent", "now", "this year"
-            - Concerns rapidly-changing topics (tech, medicine, news, events)
-            - Dealing with phenomena(events, tech, news, medicine) that may occur in the past or present
+            1) Respond ONLY with "Yes" if:
+                - The question asks about events/developments after your cutoff
+                - Uses terms like "current", "latest", "recent", "now", "this year"
+                - Concerns rapidly-changing topics (tech, medicine, news, events)
+                - Dealing with phenomena(events, tech, news, medicine) that may occur in the past or present
 
-        2) For ambiguous cases where time isn't specified but the topic evolves:
-            - Default to "Yes" for safety
-            
-        3) Respond ONLY with "No" if:
-            - No time-sensitive information is requested
-            - The subject matter is static 
+            2) For ambiguous cases where time isn't specified but the topic evolves:
+                - Default to "Yes" for safety
+                
+            3) Respond ONLY with "No" if:
+                - No time-sensitive information is requested
+                - The subject matter is static 
 
-        Never explain your reasoning - only output "Yes" or "No".
+            Never explain your reasoning - only output "Yes" or "No".
 
-    3. **used_in_context**: Determine if the current question depends on or references the history. Say `true` if it's a follow-up or refers to anything previously discussed. Say `false` if it's a completely new topic.
+        3. **used_in_context**: Determine if the current question depends on or references the history. Say `true` if it's a follow-up or refers to anything previously discussed. Say `false` if it's a completely new topic.
 
-    4. **updated_question**:
-        - If `used_in_context` is `true`, rewrite the question so that it is fully self-contained, including the necessary context from the conversation history.
-        - If `used_in_context` is `false`, return an empty string.
+        4. **updated_question**:
+            - If `used_in_context` is `true`, rewrite the question so that it is fully self-contained, including the necessary context from the conversation history.
+            - If `used_in_context` is `false`, return an empty string.
+        5. No product search at all.
+            - Just return empty array.
+            - Product search is not part of the task.
+        6. The generation should be very fast and concise.
+        Return your answer strictly in the following JSON format: {expected_output}
 
-    5. **Product Intent Detection**:  
+        Conversation history:
+        {history_text}
 
-    Determine whether the user is inquiring about a **buyable consumer product** such as clothing, electronics, tools, or household goods.  
-    - If yes, extract the product names mentioned in the query and return them in a list.  
-    - If no products are found, return an empty list `[]`.
+        Current question:
+        {question}
 
-    Return your answer strictly in the following JSON format: {expected_output}
+        """
+    if mode == 'consensus':
+        expected_output = """
+            {
+                "level": "Easy"
+                "last_year": "Yes"
+                "used_in_context": true or false,
+                "updated_question": "Rewritten question if used_in_context is true, otherwise empty string"
+                "product": ["Product A", "Product B"] or []
+            }
+        """
+        judge_prompt = f"""
+        You are an AI assistant responsible for classifying user queries.
 
-    Conversation history:
-    {history_text}
+        1. **Difficulty Assessment**: Categorize the complexity of the question as one of the following: "Easy", "Medium", or "Complex".
+        
+        2. Determine if the user's query requires information newer than your knowledge cutoff date. Use these rules:
 
-    Current question:
-    {question}
+            1) Respond ONLY with "Yes" if:
+                - The question asks about events/developments after your cutoff
+                - Uses terms like "current", "latest", "recent", "now", "this year"
+                - Concerns rapidly-changing topics (tech, medicine, news, events)
+                - Dealing with phenomena(events, tech, news, medicine) that may occur in the past or present
 
-    """
+            2) For ambiguous cases where time isn't specified but the topic evolves:
+                - Default to "Yes" for safety
+                
+            3) Respond ONLY with "No" if:
+                - No time-sensitive information is requested
+                - The subject matter is static 
+
+            Never explain your reasoning - only output "Yes" or "No".
+
+        3. **used_in_context**: Determine if the current question depends on or references the history. Say `true` if it's a follow-up or refers to anything previously discussed. Say `false` if it's a completely new topic.
+
+        4. **updated_question**:
+            - If `used_in_context` is `true`, rewrite the question so that it is fully self-contained, including the necessary context from the conversation history.
+            - If `used_in_context` is `false`, return an empty string.
+
+        5. **Product Intent Detection**:  
+
+        Determine whether the user is inquiring about a **buyable consumer product** such as clothing, electronics, tools, or household goods.  
+        - If yes, extract the product names mentioned in the query and return them in a list.  
+        - If no products are found, return an empty list `[]`.
+
+        Return your answer strictly in the following JSON format: {expected_output}
+
+        Conversation history:
+        {history_text}
+
+        Current question:
+        {question}
+
+        """
 
     messages = [
         {"role": "system", "content": judge_prompt},
@@ -861,7 +922,7 @@ def ask():
     """
 
     print(prompt)
-    judge_output = judge_system(question, history)
+    judge_output = judge_system(mode, question, history)
     if judge_output['used_in_context'] == False:
         history = []
     else:
@@ -869,16 +930,18 @@ def ask():
     print("Judge_output")
     print(judge_output)
 
-    if len(judge_output['product']) > 0:
+    if len(judge_output['product']) > 0 and mode == 'consensus':
         judge_output['level'], result = analyze_product(judge_output['level'], judge_output['last_year'], history, prompt, question)
     elif judge_output['last_year'] == 'Yes':
         result = get_news(mode, judge_output['level'], question)
-
     else:
         result = get_answer(mode, judge_output['level'], history, prompt, question)
+
     token = Devices.query.filter_by(device_id=user_id).first()
+    
     if token:
         user_id = token.email
+    
     new_history = ChatHistory(user_id = user_id, answer = result["final_answer"], status_report = json.dumps(result["status_report"]), opinion = result["opinion"], chat_id = chat_id, question = question, mode = mode, level = judge_output['level'], created_at = datetime.now(), updated_at = datetime.now())
     db.session.add(new_history)
     db.session.commit()
@@ -937,7 +1000,7 @@ async def get_product(query):
 #Generate answer of user asked question and search products mentioned in user asked question.
 #If last_year: Yes, get news and analyze news with AI models 3/5/7. After that combine answer and searched products.
 #IF last_year: No, generate answer with AI models 3/5/7. After that combine answer and searched products.
-def compare_product(mode, level, last_year, history, prompt, query, products):
+def compare_product(level, last_year, history, prompt, query, products):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
@@ -986,7 +1049,7 @@ def compare_product(mode, level, last_year, history, prompt, query, products):
 #If user just want only looking products search products and return.
 #If user want product's analyzed data, compared data, review and etc, Combine analyzed data with AI answers and products list.
 
-def analyze_product(mode, level, last_year, history, prompt, query):
+def analyze_product(level, last_year, history, prompt, query):
     analyze_prompt = f"""
     You are an AI assistant that analyzes product-related user queries.
 
