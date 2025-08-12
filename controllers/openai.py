@@ -272,17 +272,17 @@ def summarize_opinion(responses, mode):
     if not successful_answers:
         return "All models failed to answer."
     if mode == "consensus":
-        summary_prompt = """
-            > You will be given answers from several AI models. Compare them and deliver your analysis as follows:
-            >
-            > 1. **Key Points of Agreement:** List the main ideas all models share.  
-            > 2. **Notable Differences:** Highlight where their conclusions diverge.  
-            > 3. **Unique Insights:** Call out any perspective offered by only one model.  
-            >
-            > - Refer to each model as **“Model {number}”** (e.g. “Model1” “Model2” “Model3”) if you need to cite individual contributions. 
-            > - Use **numbered sections** or **bullet points**—**no tables**.  
-            > - Do **not** include actual model names or versions.  
-            > - Ensure the response is **never empty**.
+        summary_prompt = """Given the answers from different AI models, provide a structured comparison including:
+
+        Key points of agreement
+
+        Notable differences
+
+        Any unique insights provided by individual models
+        
+        Present the output in a clear and organized format using bullet points or numbered sections without any tables. The answer can't be empty.
+        
+        And You have to include the model name and version I provided when you answer .
         """
     if mode == "blaze":
         summary_prompt = """
@@ -314,7 +314,7 @@ def summarize_opinion(responses, mode):
             {"role": "user", "content": content}
         ],
     )
-
+    print("-----------------SUMMARY ANSWERED------------------")
     return response.choices[0].message.content.strip()
 
 async def get_opinion(responses, mode):
@@ -930,8 +930,9 @@ def ask():
     print("Judge_output")
     print(judge_output)
 
-    if len(judge_output['product']) > 0 and mode == 'consensus':
-        judge_output['level'], result = analyze_product(judge_output['level'], judge_output['last_year'], history, prompt, question)
+    if len(judge_output['product']) > 0:
+        if mode == 'consensus':
+            judge_output['level'], result = analyze_product(judge_output['level'], judge_output['last_year'], history, prompt, question)
     elif judge_output['last_year'] == 'Yes':
         result = get_news(mode, judge_output['level'], question)
     else:
