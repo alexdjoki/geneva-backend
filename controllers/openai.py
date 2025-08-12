@@ -20,6 +20,8 @@ from models.auth import AccessKey
 from models.transactions import Transactions
 from datetime import datetime, timedelta
 import random
+import time
+
 
 load_dotenv()
 
@@ -70,9 +72,11 @@ def gpt4o_generate(history, prompt, question):
 
 async def get_gpt4o_answer(history, prompt, question):
     print('start gpt')
+    print(int(time.time()))
     try:
         answer = await asyncio.to_thread(gpt4o_generate, history, prompt, question)
         print('end gpt')
+        print(int(time.time()))
         print(answer)
         return {"model": "GPT-4.1", "answer": answer, "status": "success"}
     except Exception as e:
@@ -178,9 +182,12 @@ def deepseek_generate(history, prompt, question):
 
 async def get_deepseek_answer(history, prompt, question):
     print('start deepseek')
+    print(int(time.time()))
+    
     try:
         answer = await asyncio.to_thread(deepseek_generate, history, prompt, question)
         print('end deepseek')
+        print(int(time.time()))
         print(answer)
         return {"model": " Deepseek V3", "answer": answer, "status": "success"}
     except Exception as e:
@@ -306,6 +313,7 @@ def summarize_opinion(responses, mode):
         """
 
     print("-----------------SUMMARY PROMPT------------------")
+    print(int(time.time()))
     print(summary_prompt)
     content = summary_prompt + "\n\n"
     for res in successful_answers:
@@ -320,6 +328,7 @@ def summarize_opinion(responses, mode):
         ],
     )
     print("-----------------SUMMARY ANSWERED------------------")
+    print(int(time.time()))
     return response.choices[0].message.content.strip()
 
 async def get_opinion(responses, mode):
@@ -332,6 +341,8 @@ async def get_opinion(responses, mode):
 #Pick besk answer from answers of AI mdoels
 def pick_best_answer(responses):
     # Here you can use heuristics or even send all to GPT for ranking
+    print("---------------PICK BEST ANSER---------------")
+    print(int(time.time()))
     valid_answers = [res for res in responses if res["status"] == "success"]
     if len(valid_answers) < 2:
         return valid_answers[0]["answer"] if valid_answers else "No valid answers."
@@ -348,7 +359,6 @@ def pick_best_answer(responses):
     for i, res in enumerate(valid_answers):
         content += f"Answer:\n{res['answer']}\n\n"
 
-    print("---------------PICK BEST ANSER---------------")
     print(content)
 
     response = deepseek_client.chat.completions.create(
@@ -358,7 +368,8 @@ def pick_best_answer(responses):
             {"role": "user", "content": content}
         ],
     )
-
+    print("---------------PICKED BEST ANSER---------------")
+    print(int(time.time()))
     return "**Consensus:**\n" + response.choices[0].message.content.strip()
 
 async def get_best_answer(responses):
@@ -376,6 +387,7 @@ def generate_answers(mode, level, history, prompt, question):
     print(prompt)
     print("-------------Question-------------")
     print(question)
+    print(int(time.time()))
     if mode == 'blaze':
         tasks = [
             get_gpt4o_answer(history, prompt, question),
@@ -408,7 +420,8 @@ def generate_answers(mode, level, history, prompt, question):
             ]
     results = loop.run_until_complete(asyncio.gather(*tasks))
     loop.close()
-
+    print("-------------END_Answers-------------")
+    print(int(time.time()))
     return results
 
 #Pick best answer and summarize the opinion from answers of each models
@@ -416,6 +429,7 @@ def analyze_result(results, mode):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     print("\n------------ANALYZE RESULT------------\n")
+    print(int(time.time()))
     print(results)
     summarize = loop.run_until_complete(asyncio.gather(
         get_best_answer(results),
@@ -423,7 +437,8 @@ def analyze_result(results, mode):
     ))
     best_answer, opinion = summarize
     loop.close()
-
+    print("\n------------END ANALYZE RESULT------------\n")
+    print(int(time.time()))
     return best_answer, opinion
 
 #Generate answer of user asked(findal_answer: main answer, status_report: AI models success report, opinion: summarized opinion)
@@ -611,6 +626,7 @@ def retrieve_news(query):
     # Merge + deduplicate
     all_articles = google_articles + brave_articles
     print("------All Articles---------------")
+    print(int(time.time()))
     print(all_articles)
     seen_urls = set()
     unique_articles = []
@@ -636,6 +652,8 @@ def generate_news(mode, level, history, prompt, question):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     tasks = []
+    print("----------------generate_new--------------")
+    print(int(time.time()))
     if level == 'mode':
         tasks = [
             get_gpt4o_answer(history, prompt, question),
@@ -667,6 +685,8 @@ def generate_news(mode, level, history, prompt, question):
                 get_grok_answer(history, prompt, question),
             ]
     results = loop.run_until_complete(asyncio.gather(*tasks))
+    print("----------------end_generate_new--------------")
+    print(int(time.time()))
     loop.close()
 
     return results
@@ -675,6 +695,7 @@ def generate_news(mode, level, history, prompt, question):
 def get_news(mode, level, query):
     result = retrieve_news(query)
     print("------------Result for retrieved news-----------------")
+    print(int(time.time()))
     print(result)
     print('---------------start analyzing news----------------')
     prompt = "Summarize the provided news search results clearly and objectively for a human reader."
@@ -730,6 +751,8 @@ def retrieve():
 #updated_question: if used_in_context is yes, generated updated_question(ex. question: explain more about above product. updated_question: explain more about PS5 )
 #product: user wanted products list
 def judge_system(mode, question, history = []):
+    print("------------start judge system------------")
+    print(int(time.time()))
     history_text = ""
     for item in history:
         text = item.get('text', '')  # This won't raise KeyError
@@ -862,6 +885,9 @@ def judge_system(mode, question, history = []):
 
     judge_output = judge_output[first_pos:last_pos + 1]
     judge_output = json.loads(judge_output)
+    print("--------------end_judge_system--------------")
+    print(int(time.time()))
+    print(judge_output)
     return judge_output
 
 # Test route
@@ -927,19 +953,25 @@ def ask():
     """
 
     print(prompt)
+    print(int(time.time()))
     judge_output = judge_system(mode, question, history)
     if judge_output['used_in_context'] == False:
         history = []
     else:
         question = judge_output['updated_question']
     print("Judge_output")
+    print(int(time.time()))
     print(judge_output)
 
     if len(judge_output['product']) > 0:
         if mode == 'consensus':
             judge_output['level'], result = analyze_product(mode, judge_output['level'], judge_output['last_year'], history, prompt, question)
     elif judge_output['last_year'] == 'Yes':
+        print("getting news")
+        print(int(time.time()))
         result = get_news(mode, judge_output['level'], question)
+        print("got news")
+        print(int(time.time()))
     else:
         result = get_answer(mode, judge_output['level'], history, prompt, question)
 
@@ -1026,7 +1058,7 @@ def compare_product(mode, level, last_year, history, prompt, query, products):
         ))
     else:
         analyze = loop.run_until_complete(asyncio.gather(
-            generate_answer(level, history, prompt, query),
+            generate_answer(mode, level, history, prompt, query),
         ))
     result = analyze[0]
     loop.close()
