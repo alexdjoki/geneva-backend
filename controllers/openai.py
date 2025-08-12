@@ -233,11 +233,16 @@ def mistral_generate(history, prompt, question):
 
     response = requests.post(MISTRAL_API_URL, json=payload, headers=headers)
 
+    try:
+        print("Parsed JSON:", response.json())
+    except ValueError:
+        print("Response is not valid JSON.")
+
     if response.status_code == 200:
         result = response.json()
         return result["choices"][0]["message"]["content"]
     else:
-        return response.text
+        raise Exception("Request failed with status code:", response.status_code)
 
 async def get_mistral_answer(history, prompt, question):
     print('start mistral')
@@ -932,7 +937,7 @@ def ask():
 
     if len(judge_output['product']) > 0:
         if mode == 'consensus':
-            judge_output['level'], result = analyze_product(judge_output['level'], judge_output['last_year'], history, prompt, question)
+            judge_output['level'], result = analyze_product(mode, judge_output['level'], judge_output['last_year'], history, prompt, question)
     elif judge_output['last_year'] == 'Yes':
         result = get_news(mode, judge_output['level'], question)
     else:
@@ -1001,7 +1006,7 @@ async def get_product(query):
 #Generate answer of user asked question and search products mentioned in user asked question.
 #If last_year: Yes, get news and analyze news with AI models 3/5/7. After that combine answer and searched products.
 #IF last_year: No, generate answer with AI models 3/5/7. After that combine answer and searched products.
-def compare_product(level, last_year, history, prompt, query, products):
+def compare_product(mode, level, last_year, history, prompt, query, products):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
@@ -1050,7 +1055,7 @@ def compare_product(level, last_year, history, prompt, query, products):
 #If user just want only looking products search products and return.
 #If user want product's analyzed data, compared data, review and etc, Combine analyzed data with AI answers and products list.
 
-def analyze_product(level, last_year, history, prompt, query):
+def analyze_product(mode, level, last_year, history, prompt, query):
     analyze_prompt = f"""
     You are an AI assistant that analyzes product-related user queries.
 
