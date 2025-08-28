@@ -71,13 +71,11 @@ def gpt4o_generate(history, prompt, question):
     ).choices[0].message.content
 
 async def get_gpt4o_answer(history, prompt, question):
-    print('start gpt')
-    print(int(time.time()))
+    print('start gpt', int(time.time()))
     try:
         answer = await asyncio.to_thread(gpt4o_generate, history, prompt, question)
-        print('end gpt')
-        print(int(time.time()))
         print(answer)
+        print('end gpt', int(time.time()))
         return {"model": "GPT-4.1", "answer": answer, "status": "success"}
     except Exception as e:
         return {"model": "GPT-4.1", "answer": "", "status": "failed"}
@@ -121,11 +119,11 @@ def claude_generate(history, prompt, question):
     return full_response
 
 async def get_claude_answer(history, prompt, question):
-    print('start claude')
+    print('start claude', int(time.time()))
     try:
         answer = await asyncio.to_thread(claude_generate, history, prompt, question)
-        print('end claude')
         print(answer)
+        print('end claud', int(time.time()))
         return {"model": "Claude Opus 4", "answer": answer, "status": "success"}
     except Exception as e:
         print(str(e))
@@ -146,10 +144,10 @@ def gemini_generate(history, prompt, question):
     return response.text
 
 async def get_gemini_answer(history, prompt, question):
-    print('start gemini')
+    print('start gemini', int(time.time()))
     try:
         answer = await asyncio.to_thread(gemini_generate, history, prompt, question)
-        print('end gemini')
+        print('end gemini', int(time.time()))
         return {"model": "Gemini 2.5 Pro", "answer": answer, "status": "success"}
     except Exception as e:
         return {"model": "Gemini 2.5 Pro", "answer": "", "status": "failed"}
@@ -181,14 +179,11 @@ def deepseek_generate(history, prompt, question):
         return ''
 
 async def get_deepseek_answer(history, prompt, question):
-    print('start deepseek')
-    print(int(time.time()))
-    
+    print('start deepseek', int(time.time()))
     try:
         answer = await asyncio.to_thread(deepseek_generate, history, prompt, question)
-        print('end deepseek')
-        print(int(time.time()))
         print(answer)
+        print('end deepseek', int(time.time()))
         return {"model": " Deepseek V3", "answer": answer, "status": "success"}
     except Exception as e:
         return {"model": " Deepseek V3", "answer": "", "status": "failed"}
@@ -215,11 +210,11 @@ def grok_generate(history, prompt, question):
     ).choices[0].message.content
 
 async def get_grok_answer(history, prompt, question):
-    print('start grok')
+    print('start grok', int(time.time()))
     try:
         answer = await asyncio.to_thread(grok_generate, history, prompt, question)
-        print('end grok')
         print(answer)
+        print('end grok', int(time.time()))
         return {"model": "Grok 4", "answer": answer, "status": "success"}
     except Exception as e:
         return {"model": "Grok 4", "answer": str(e), "status": "failed"}
@@ -269,11 +264,11 @@ def llama_generate(history, prompt, question):
     return response.choices[0].message.content
 
 async def get_llama_answer(history, prompt, question):
-    print('start llama')
+    print('start llama', int(time.time()))
     try:
         answer = await asyncio.to_thread(llama_generate, history, prompt, question)
-        print('end llama')
         print(answer)
+        print('end llama', int(time.time()))
         return {"model": "Llama 4", "answer": answer, "status": "success"}
     except Exception as e:
         return {"model": "Llama 4", "answer": str(e), "status": "failed"}
@@ -284,52 +279,84 @@ def summarize_opinion(responses, mode):
     if not successful_answers:
         return "All models failed to answer."
     if mode == "consensus":
-        summary_prompt = """Given the answers from different AI models, provide a structured comparison including:
+        summary_prompt = """You will be given answers from different AI models. 
+Provide a **Structured Comparison of AI Model Responses** with the following format:
 
-        Key points of agreement
+### Structured Comparison of AI Model Responses
 
-        Notable differences
+**Key Points of Agreement**
+- Clearly state what specific models (by name/version) agreed on. Example: "GPT-4.1 and Claude Opus 4 agree that X."
+- If more than two models agree, say: "GPT-4.1, Claude Opus 4, and Gemini 2.5 Pro all agree that Y."
 
-        Any unique insights provided by individual models
-        
-        Present the output in a clear and organized format using bullet points or numbered sections without any tables. The answer can't be empty.
-        
-        And You have to include the model name and version I provided when you answer .
-        """
-    if mode == "blaze":
+**Notable Differences**
+- Explicitly mention which model(s) gave a different perspective. Example: "Mistral Large emphasized..., while Grok 4 focused on..."
+
+**Unique Insights**
+- If any single model added information not covered by others, mention the model and summarize that contribution.
+
+Rules:
+- Always include the section title exactly as shown above.
+- Always attribute points to the correct models by their name/version as provided in the input.
+- Do not merge everything into a generic summary without attribution.
+- Never leave a section empty; if nothing fits, write "None noted."
+"""
+    elif mode == "blaze":
         summary_prompt = """
-            > You will be given answers from several AI models. Summarize their collective reasoning as follows:
-            >
-            > 1. Describe how the models think about the topic, beginning with phrasing like “The models agree that…,” “The models opine that…,” or “The models think that….”  
-            >    - Start with a single introductory phrase like “The models agree that…” or “The models think that….”  
-            >    - After that, present the shared points directly—don’t repeat the introductory phrase for each bullet.
-            > - Refer to each model as **“Model {number}”** (e.g. “Model1” “Model2” “Model3”) if you need to cite individual contributions.  
-            > - Use **numbered sections** or **bullet points**—**no tables**.  
-            > - Do **not** include actual model names or versions.  
-            > - Do **not** mention unique insights or notable differences. 
-            > - Don't mention "both" but just "model 1" and "model 2" or "all models". 
-            > - Ensure the response is **never empty**.
-            > - For each section, don't try to use "The models agree that ... " except fisrt beginning of the summary, but just mention contents.
-        """
+> You will be given answers from several AI models. Summarize their collective reasoning as follows:
+> 1) Begin with “The models agree that …” once, then list shared points.
+> 2) Refer to individual models as “Model 1”, “Model 2”, etc. (do NOT use actual model names).
+> 3) Use numbered sections or bullet points (no tables).
+> 4) Do NOT mention unique insights or notable differences.
+> 5) Do NOT use “both”; say “Model 1 and Model 2” or “all models”.
+> 6) Ensure the response is never empty.
+> 7) After the first sentence, don’t repeat “The models agree that …”; just list the content.
+"""
+    else:
+        # Fallback to consensus rules if an unknown mode sneaks in
+        summary_prompt = """Provide a concise, structured comparison:
+- Agreements
+- Differences
+- Unique insights
+Use bullets, no tables, and include model names as provided."""
 
-    print("-----------------SUMMARY PROMPT------------------")
-    print(int(time.time()))
+
+    print("-----------------SUMMARY PROMPT------------------", int(time.time()))
     print(summary_prompt)
+    # Build input content for Llama
     content = summary_prompt + "\n\n"
-    for res in successful_answers:
-        if res['answer'] != "" :
-            content += f"{res['model'].capitalize()} said: {res['answer']}\n\n"
+    for idx, res in enumerate(successful_answers, start=1):
+        # Preserve supplied model name for 'consensus' mode; for 'blaze' we still pass it in,
+        # but the instructions tell Llama NOT to use them in the output.
+        model_label = res.get('model', f"Model {idx}")
+        ans = (res.get('answer') or "").strip()
+        if ans:
+            content += f"{model_label} said:\n{ans}\n\n"
 
-    response = deepseek_client.chat.completions.create(
-        model="deepseek-chat",
+    # Call Llama on Together
+    llm = together_client.chat.completions.create(
+        model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
         messages=[
-            {"role": "system", "content": "You are a helpful assistant who compares AI answers and summarizes consensus or differences."},
+            {"role": "system", "content": "You compare AI answers and produce clean, structured summaries."},
             {"role": "user", "content": content}
         ],
+        temperature=0.2,
+        max_tokens=800,
     )
-    print("-----------------SUMMARY ANSWERED------------------")
-    print(int(time.time()))
-    return response.choices[0].message.content.strip()
+    print("-----------------SUMMARY ANSWERED------------------", int(time.time()))
+    return (llm.choices[0].message.content or "").strip()
+    # content = summary_prompt + "\n\n"
+    # for res in successful_answers:
+    #     if res['answer'] != "" :
+    #         content += f"{res['model'].capitalize()} said: {res['answer']}\n\n"
+
+    # response = deepseek_client.chat.completions.create(
+    #     model="deepseek-chat",
+    #     messages=[
+    #         {"role": "system", "content": "You are a helpful assistant who compares AI answers and summarizes consensus or differences."},
+    #         {"role": "user", "content": content}
+    #     ],
+    # )
+    # return response.choices[0].message.content.strip()
 
 async def get_opinion(responses, mode):
     try:
@@ -340,37 +367,70 @@ async def get_opinion(responses, mode):
 
 #Pick besk answer from answers of AI mdoels
 def pick_best_answer(responses):
-    # Here you can use heuristics or even send all to GPT for ranking
-    print("---------------PICK BEST ANSER---------------")
-    print(int(time.time()))
-    valid_answers = [res for res in responses if res["status"] == "success"]
-    if len(valid_answers) < 2:
-        return valid_answers[0]["answer"] if valid_answers else "No valid answers."
+    # # Here you can use heuristics or even send all to GPT for ranking
+    # print("---------------PICK BEST ANSER---------------", int(time.time()))
+    # valid_answers = [res for res in responses if res["status"] == "success"]
+    # if len(valid_answers) < 2:
+    #     return valid_answers[0]["answer"] if valid_answers else "No valid answers."
 
-    prompt = f"""
-    Multiple answers are provided for the same question, generated by different AI models.
+    # prompt = f"""
+    # Multiple answers are provided for the same question, generated by different AI models.
 
-    Choose the answer that the user understands and is based on accurate explanation and evidence, detailed.
+    # Choose the answer that the user understands and is based on accurate explanation and evidence, detailed.
 
-    Please answer only with the selected answer. Do not include explanation, evidence, or additional explanation.
-    """
+    # Please answer only with the selected answer. Do not include explanation, evidence, or additional explanation.
+    # """
 
-    content = prompt + "\n\n"
-    for i, res in enumerate(valid_answers):
-        content += f"Answer:\n{res['answer']}\n\n"
+    # content = prompt + "\n\n"
+    # for i, res in enumerate(valid_answers):
+    #     content += f"Answer:\n{res['answer']}\n\n"
 
-    print(content)
+    # response = deepseek_client.chat.completions.create(
+    #     model="deepseek-chat",
+    #     messages=[
+    #         {"role": "system", "content": "You are a critical evaluator of AI-generated responses."},
+    #         {"role": "user", "content": content}
+    #     ],
+    # )
+    # print("---------------PICKED BEST ANSER---------------", int(time.time()))
+    # return "**Consensus:**\n" + response.choices[0].message.content.strip()
+    print("---------------PICK BEST ANSWER---------------", int(time.time()))
+    valid_answers = [res for res in responses if res["status"] == "success" and (res.get("answer") or "").strip()]
+    if len(valid_answers) == 0:
+        return "No valid answers."
+    if len(valid_answers) == 1:
+        return "**Consensus:**\n" + valid_answers[0]["answer"]
 
-    response = deepseek_client.chat.completions.create(
-        model="deepseek-chat",
+    ranking_prompt = """
+Multiple answers were generated for the same user question by different AI models.
+
+Choose the single best answer according to these criteria (in order):
+1) Factual accuracy and absence of hallucinations
+2) Clarity and completeness (covers likely follow-ups)
+3) Actionable structure (steps, bullets) where appropriate
+4) Conciseness without omitting key details
+
+Output ONLY the selected answer text. Do NOT add any commentary, rankings, or explanation.
+"""
+
+    content = ranking_prompt + "\n\n"
+    for i, res in enumerate(valid_answers, start=1):
+        content += f"Answer {i}:\n{res['answer'].strip()}\n\n"
+
+    # Call Llama on Together
+    llm = together_client.chat.completions.create(
+        model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
         messages=[
-            {"role": "system", "content": "You are a critical evaluator of AI-generated responses."},
+            {"role": "system", "content": "You are a strict evaluator that selects the best single answer verbatim."},
             {"role": "user", "content": content}
         ],
+        temperature=0.1,
+        max_tokens=1200,
     )
-    print("---------------PICKED BEST ANSER---------------")
-    print(int(time.time()))
-    return "**Consensus:**\n" + response.choices[0].message.content.strip()
+
+    chosen = (llm.choices[0].message.content or "").strip()
+    print("---------------PICKED BEST ANSWER---------------", int(time.time()))
+    return "**Consensus:**\n" + chosen
 
 async def get_best_answer(responses):
     try:
@@ -383,15 +443,14 @@ def generate_answers(mode, level, history, prompt, question):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     tasks = []
-    print("-------------Prompt------------")
+    print("-------------Prompt------------", level)
     print(prompt)
-    print("-------------Question-------------")
+    print("-------------Question-------------", int(time.time()))
     print(question)
-    print(int(time.time()))
     if mode == 'blaze':
         tasks = [
             get_gpt4o_answer(history, prompt, question),
-            get_deepseek_answer(history, prompt, question),
+            get_llama_answer(history, prompt, question),
         ]
     else:
         if level == 'Easy':
@@ -420,16 +479,14 @@ def generate_answers(mode, level, history, prompt, question):
             ]
     results = loop.run_until_complete(asyncio.gather(*tasks))
     loop.close()
-    print("-------------END_Answers-------------")
-    print(int(time.time()))
+    print("-------------END_Answers-------------", int(time.time()))
     return results
 
 #Pick best answer and summarize the opinion from answers of each models
 def analyze_result(results, mode):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    print("\n------------ANALYZE RESULT------------\n")
-    print(int(time.time()))
+    print("\n------------ANALYZE RESULT------------\n", int(time.time()))
     print(results)
     summarize = loop.run_until_complete(asyncio.gather(
         get_best_answer(results),
@@ -437,8 +494,7 @@ def analyze_result(results, mode):
     ))
     best_answer, opinion = summarize
     loop.close()
-    print("\n------------END ANALYZE RESULT------------\n")
-    print(int(time.time()))
+    print("\n------------END ANALYZE RESULT------------\n", int(time.time()))
     return best_answer, opinion
 
 #Generate answer of user asked(findal_answer: main answer, status_report: AI models success report, opinion: summarized opinion)
@@ -569,7 +625,10 @@ def fetch_brave_news(query):
 
     params = {
         "q": query,
-        "count": 10  # number of results (max: 20 for free tier)
+        "count": 10,  # number of results (max: 20 for free tier),
+        # If Brave supports a freshness param in your tier, include it; examples: 'pd','pw','pm','py'
+        # Comment out if your plan doesn't accept it.
+        "freshness": "py"
     }
 
     response = requests.get("https://api.search.brave.com/res/v1/web/search", headers=headers, params=params)
@@ -590,7 +649,11 @@ def fetch_google_pse_news(query):
         "key": google_search_api_key,
         "cx": google_cx_id,
         "q": f"site:reuters.com OR site:bloomberg.com OR site:wsj.com OR site:cnbc.com {query}",
-        "num": 10
+        "num": 10,
+        # Prefer recent results; 'dateRestrict' restricts freshness (y1 = last 1 year; m3 = last 3 months)
+        "dateRestrict": "y1",
+        # 'sort=date' requests time ordering where supported by the CSE
+        "sort": "date"
     }
     response = requests.get(url, params=params)
     results = response.json().get('items', [])
@@ -598,7 +661,7 @@ def fetch_google_pse_news(query):
         "title": r.get("title", ""),
         "snippet": r.get("snippet", ""),
         "source": r.get("displayLink", ""),
-        "url": r.get("link", "")
+        "url": r.get("link", ""),
     } for r in results]
 
 #Set the priority of searching websites(Search Reuters, Bloomberg, WSJ, CNBC first and search other sites)
@@ -652,12 +715,11 @@ def generate_news(mode, level, history, prompt, question):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     tasks = []
-    print("----------------generate_new--------------")
-    print(int(time.time()))
-    if level == 'mode':
+    print("----------------generate_new--------------", level, int(time.time()))
+    if mode == 'blaze':
         tasks = [
             get_gpt4o_answer(history, prompt, question),
-            get_deepseek_answer(history, prompt, question),
+            get_llama_answer(history, prompt, question),
         ]
     else:
         if level == 'Easy':
@@ -685,8 +747,7 @@ def generate_news(mode, level, history, prompt, question):
                 get_grok_answer(history, prompt, question),
             ]
     results = loop.run_until_complete(asyncio.gather(*tasks))
-    print("----------------end_generate_new--------------")
-    print(int(time.time()))
+    print("----------------end_generate_new--------------", int(time.time()))
     loop.close()
 
     return results
@@ -694,10 +755,7 @@ def generate_news(mode, level, history, prompt, question):
 #Get the news using google search and brave API. After that Analyze the searched results using AI models
 def get_news(mode, level, query):
     result = retrieve_news(query)
-    print("------------Result for retrieved news-----------------")
-    print(int(time.time()))
-    print(result)
-    print('---------------start analyzing news----------------')
+    print('---------------start analyzing news----------------', int(time.time()))
     prompt = "Summarize the provided news search results clearly and objectively for a human reader."
 
     question = f"""
@@ -721,7 +779,7 @@ def get_news(mode, level, query):
     """
 
     results = generate_news(mode, level, [], prompt, question)
-    print("-------News for Generated from news-----------")
+    print("-------News for Generated from news-----------", int(time.time()))
     print(results)
 
     status_report = [
@@ -751,8 +809,7 @@ def retrieve():
 #updated_question: if used_in_context is yes, generated updated_question(ex. question: explain more about above product. updated_question: explain more about PS5 )
 #product: user wanted products list
 def judge_system(mode, question, history = []):
-    print("------------start judge system------------")
-    print(int(time.time()))
+    print("------------start judge system------------", int(time.time()))
     history_text = ""
     for item in history:
         text = item.get('text', '')  # This won't raise KeyError
@@ -885,8 +942,7 @@ def judge_system(mode, question, history = []):
 
     judge_output = judge_output[first_pos:last_pos + 1]
     judge_output = json.loads(judge_output)
-    print("--------------end_judge_system--------------")
-    print(int(time.time()))
+    print("--------------end_judge_system--------------", int(time.time()))
     print(judge_output)
     return judge_output
 
@@ -953,7 +1009,7 @@ def ask():
     """
 
     print(prompt)
-    print(int(time.time()))
+    print('start prompt', int(time.time()))
     judge_output = judge_system(mode, question, history)
     if judge_output['used_in_context'] == False:
         history = []
@@ -967,11 +1023,9 @@ def ask():
         if mode == 'consensus':
             judge_output['level'], result = analyze_product(mode, judge_output['level'], judge_output['last_year'], history, prompt, question)
     elif judge_output['last_year'] == 'Yes':
-        print("getting news")
-        print(int(time.time()))
+        print("getting news", int(time.time()))
         result = get_news(mode, judge_output['level'], question)
-        print("got news")
-        print(int(time.time()))
+        print("got news", int(time.time()))
     else:
         result = get_answer(mode, judge_output['level'], history, prompt, question)
 
