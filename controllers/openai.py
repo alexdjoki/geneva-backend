@@ -21,6 +21,8 @@ from models.transactions import Transactions
 from datetime import datetime, timedelta
 import random
 import time
+from collections import OrderedDict
+from itertools import chain
 
 
 load_dotenv()
@@ -81,43 +83,33 @@ async def get_gpt4o_answer(history, prompt, question):
         return {"model": "GPT-4.1", "answer": "", "status": "failed"}
 
 # Generate answer using Claude (Anthropic)
-def claude_generate(history, prompt, question):
+def claude_generate(history, question):
     messages = []
     for element in history:
         if element['type'] == 'question':
             messages.append({"role": "user", "content": element["text"]})
-        if element['type'] == 'answer':
+        elif element['type'] == 'answer':
             messages.append({"role": "assistant", "content": element["text"]})
 
-    messages.append({
-        "role": "user",
-        "content": question
-    })
+    # Append the new user question
+    messages.append({"role": "user", "content": question})
 
     full_response = ""
-    stop_reason = None
 
-    while True:
-        response = anthropic_client.messages.create(
-            model='claude-opus-4-20250514',
-            max_tokens=1024,
-            messages=messages
-        )
-
-        chunk_text = response.content[0].text
-        stop_reason = response.stop_reason
-
-        full_response += chunk_text
-
-        if stop_reason != "max_tokens":
-            break
-
-        # Append current response to context and ask it to continue
-        messages.append({"role": "assistant", "content": chunk_text})
-        messages.append({"role": "user", "content": "Please continue."})
+    # Use streaming API
+    with anthropic_client.messages.stream(
+        model="claude-3-5-sonnet-20240620",  # or "claude-opus-4-20250514"
+        max_tokens=4096,   # set generously
+        messages=messages
+    ) as stream:
+        for event in stream:
+            if event.type == "content_block_delta":
+                # Append incremental text
+                full_response += event.delta
+            elif event.type == "message_stop":
+                break
 
     return full_response
-
 async def get_claude_answer(history, prompt, question):
     print('start claude', int(time.time()))
     try:
@@ -280,26 +272,43 @@ def summarize_opinion(responses, mode):
         return "All models failed to answer."
     if mode == "consensus":
         summary_prompt = """You will be given answers from different AI models. 
-Provide a **Structured Comparison of AI Model Responses** with the following format:
+Provide a **Structured Comparison of AI Model Responses From Different Models** with the following format:
 
-### Structured Comparison of AI Model Responses
+Structured Comparison of AI Model Responses
 
-**Key Points of Agreement**
+### Key Points of Agreement
 - Clearly state what specific models (by name/version) agreed on. Example: "GPT-4.1 and Claude Opus 4 agree that X."
 - If more than two models agree, say: "GPT-4.1, Claude Opus 4, and Gemini 2.5 Pro all agree that Y."
 
-**Notable Differences**
+### Notable Differences
 - Explicitly mention which model(s) gave a different perspective. Example: "Mistral Large emphasized..., while Grok 4 focused on..."
 
-**Unique Insights**
-- If any single model added information not covered by others, mention the model and summarize that contribution.
+### Unique Insights By Model
+Provide unique insights grouped under subheadings for each model.
+
+**{Model Name Version}**:
+- Summarize the unique insights only this model contributed.
+
+---
+
+### Final Observations
+- before last section, please add divider line
+**Consensus**:
+- Summarize the strongest areas where models clearly aligned.
+
+**Divergence**:
+- Summarize the most significant disagreements or contrasting emphases.
+
+**Skepticism vs Advocacy**:
+- Highlight where models showed cautious reasoning (skepticism) vs confident promotion (advocacy).
 
 Rules:
-- Always include the section title exactly as shown above.
+- Always include the section titles exactly as shown above.
 - Always attribute points to the correct models by their name/version as provided in the input.
 - Do not merge everything into a generic summary without attribution.
 - Never leave a section empty; if nothing fits, write "None noted."
 """
+
     elif mode == "blaze":
         summary_prompt = """
 > You will be given answers from several AI models. Summarize their collective reasoning as follows:
@@ -309,16 +318,8 @@ Rules:
 > 4) Do NOT mention unique insights or notable differences.
 > 5) Do NOT use “both”; say “Model 1 and Model 2” or “all models”.
 > 6) Ensure the response is never empty.
-> 7) After the first sentence, don’t repeat “The models agree that …”; just list the content.
+> 7) After the first sentence, don't repeat “The models agree that …”; just list the content.
 """
-    else:
-        # Fallback to consensus rules if an unknown mode sneaks in
-        summary_prompt = """Provide a concise, structured comparison:
-- Agreements
-- Differences
-- Unique insights
-Use bullets, no tables, and include model names as provided."""
-
 
     print("-----------------SUMMARY PROMPT------------------", int(time.time()))
     print(summary_prompt)
@@ -340,7 +341,7 @@ Use bullets, no tables, and include model names as provided."""
             {"role": "user", "content": content}
         ],
         temperature=0.2,
-        max_tokens=800,
+        max_tokens=4000,
     )
     print("-----------------SUMMARY ANSWERED------------------", int(time.time()))
     return (llm.choices[0].message.content or "").strip()
@@ -361,6 +362,8 @@ Use bullets, no tables, and include model names as provided."""
 async def get_opinion(responses, mode):
     try:
         answer = await asyncio.to_thread(summarize_opinion, responses, mode)
+        print("-----------------SUMMARY ANSWERED------------------", int(time.time()))
+        print(answer)
         return answer
     except Exception as e:
         raise RuntimeError(f"Summarizing failed: {str(e)}")
@@ -372,7 +375,6 @@ def pick_best_answer(responses):
     # valid_answers = [res for res in responses if res["status"] == "success"]
     # if len(valid_answers) < 2:
     #     return valid_answers[0]["answer"] if valid_answers else "No valid answers."
-
     # prompt = f"""
     # Multiple answers are provided for the same question, generated by different AI models.
 
@@ -402,15 +404,42 @@ def pick_best_answer(responses):
         return "**Consensus:**\n" + valid_answers[0]["answer"]
 
     ranking_prompt = """
-Multiple answers were generated for the same user question by different AI models.
+You are tasked with evaluating multiple answers produced by different AI models for the same user question.
+Your role is to act as a strict evaluator who selects the SINGLE best response.
 
-Choose the single best answer according to these criteria (in order):
-1) Factual accuracy and absence of hallucinations
-2) Clarity and completeness (covers likely follow-ups)
-3) Actionable structure (steps, bullets) where appropriate
-4) Conciseness without omitting key details
+Follow these steps carefully:
 
-Output ONLY the selected answer text. Do NOT add any commentary, rankings, or explanation.
+1. Read and compare all provided answers thoroughly. 
+   - Treat each answer as if it came from a candidate in an expert competition.
+   - Consider accuracy, clarity, completeness, and practical usefulness.
+
+2. Rank the answers according to the following criteria (in priority order):
+
+   (a) **Factual Accuracy**
+   - Verify that the answer is free of errors, hallucinations, or misleading claims.
+   - Disqualify or penalize any answer that fabricates information or contradicts well-known facts.
+
+   (b) **Clarity and Completeness**
+   - Prefer answers that are easy to understand, logically structured, and self-contained.
+   - The best answer should cover the likely follow-up questions without requiring additional clarification.
+
+   (c) **Actionable Structure**
+   - Reward answers that use steps, bullet points, or well-formatted sections.
+   - For example: clear lists of pros/cons, step-by-step methods, or bullet-pointed explanations.
+
+   (d) **Conciseness**
+   - The best answer balances detail with brevity: no unnecessary filler, but also no missing essentials.
+   - Avoid overly short summaries that leave gaps in understanding.
+
+3. After applying these criteria, select the SINGLE best answer.
+   - Do not merge or blend answers.
+   - Do not try to rewrite or improve them.
+   - Output the best one exactly as given.
+
+**STRICT OUTPUT INSTRUCTIONS**
+- Output ONLY the full text of the winning answer.
+- Do NOT add commentary, rankings, explanations, or meta-text.
+- Do NOT prepend or append anything like "The best answer is:" — just return the answer itself.
 """
 
     content = ranking_prompt + "\n\n"
@@ -425,7 +454,7 @@ Output ONLY the selected answer text. Do NOT add any commentary, rankings, or ex
             {"role": "user", "content": content}
         ],
         temperature=0.1,
-        max_tokens=1200,
+        max_tokens=4000,
     )
 
     chosen = (llm.choices[0].message.content or "").strip()
@@ -482,6 +511,112 @@ def generate_answers(mode, level, history, prompt, question):
     print("-------------END_Answers-------------", int(time.time()))
     return results
 
+def _fallback_image_keywords_from_text(text: str):
+    terms = extract_key_terms(text or "") or ["overview", "context", "details"]
+    top_mods = ["overview", "real world", "context", "landscape", "scene",
+                "wide", "example", "interface", "architecture", "in practice"]
+    bottom_mods = ["close up", "diagram", "workflow", "comparison", "steps",
+                   "how to", "setup", "configuration", "metrics", "results"]
+
+    def expand(mods):
+        out = []
+        for m in mods:
+            for t in terms:
+                out.append(f"{t} {m}".strip())
+        return out
+
+    top_keywords = (expand(top_mods) or top_mods)[:30]
+    bottom_keywords = (expand(bottom_mods) or bottom_mods)[:30]
+    if len(top_keywords) < 10: top_keywords = (top_keywords * ((10 // max(1, len(top_keywords))) + 1))[:10]
+    if len(bottom_keywords) < 10: bottom_keywords = (bottom_keywords * ((10 // max(1, len(bottom_keywords))) + 1))[:10]
+    return top_keywords[:30], bottom_keywords[:30]
+
+#Generate image keywords
+def get_image_keywords_from_responses(responses):
+    """
+    Input: same as pick_best_answer(responses) -> list of {model, answer, status, ...}
+    Output: (top_keywords, bottom_keywords)  # each >= 10 strings
+    Uses Together Llama. Deterministic fallback if JSON invalid or short.
+    """
+    print("---------------IMAGE KEYWORDS---------------", int(time.time()))
+    valid_answers = [res for res in responses if res.get("status") == "success" and (res.get("answer") or "").strip()]
+    if not valid_answers:
+        return _fallback_image_keywords_from_text("")
+
+    parts = []
+    for i, res in enumerate(valid_answers, start=1):
+        parts.append(f"Answer {i}:\n{res['answer'].strip()}\n")
+    bundle = "\n".join(parts)
+
+    prompt = f"""
+You will receive multiple ANSWERS to the same question.
+
+Task:
+1) Skim the answers and anchor on the strongest/clearest content.
+2) Produce STRICT JSON ONLY in this exact shape:
+   {{"top_keywords": ["..."], "bottom_keywords": ["..."]}}
+
+Rules:
+- Each array MUST contain AT LEAST 5 concise queries (3-6 words each).
+- Queries must be tightly related to the anchored answer's concrete entities (names, models, orgs, places, versions, dates if helpful).
+- "top_keywords" = hero/context image queries (wide/scene/overview).
+- "bottom_keywords" = detail/diagram/comparison/workflow image queries.
+- Avoid generic words like "image", "photo", "picture", "wallpaper".
+- No explanations, no extra text — JSON only.
+
+ANSWERS:
+{bundle}
+""".strip()
+
+    try:
+        resp = together_client.chat.completions.create(
+            model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+            max_tokens=900,
+        )
+        raw = (resp.choices[0].message.content or "").strip()
+        i, j = raw.find("{"), raw.rfind("}")
+        if i == -1 or j == -1:
+            raise ValueError("No JSON object found from Llama.")
+
+        obj = json.loads(raw[i:j+1])
+        top_keywords = [str(x).strip() for x in (obj.get("top_keywords") or []) if str(x).strip()]
+        bottom_keywords = [str(x).strip() for x in (obj.get("bottom_keywords") or []) if str(x).strip()]
+
+        # ensure >= 10 each; pad deterministically if needed
+        if len(top_keywords) < 10 or len(bottom_keywords) < 10:
+            seed_text = "\n\n".join([r["answer"] for r in valid_answers])
+            fb_top, fb_bottom = _fallback_image_keywords_from_text(seed_text)
+            while len(top_keywords) < 10:
+                top_keywords.append(fb_top[len(top_keywords) % len(fb_top)])
+            while len(bottom_keywords) < 10:
+                bottom_keywords.append(fb_bottom[len(bottom_keywords) % len(fb_bottom)])
+
+        print("---------------IMAGE KEYWORDS DONE-----------", int(time.time()))
+        return top_keywords[:30], bottom_keywords[:30]
+
+    except Exception as e:
+        print(f"image keywords (llama) error: {e}")
+        seed_text = "\n\n".join([r["answer"] for r in valid_answers]) if valid_answers else ""
+        return _fallback_image_keywords_from_text(seed_text)
+
+#Generate image keywords
+async def get_keywords(responses):
+    """
+    Async wrapper so keywords are generated concurrently with get_best_answer and get_opinion.
+    Returns: {"top_keywords": [...], "bottom_keywords": [...], "status": "success|failed"}
+    """
+    print("start keywords", int(time.time()))
+    try:
+        top_keywords, bottom_keywords = await asyncio.to_thread(get_image_keywords_from_responses, responses)
+        print("end keywords", int(time.time()))
+        print(top_keywords, bottom_keywords)
+        return {"top_keywords": top_keywords, "bottom_keywords": bottom_keywords, "status": "success"}
+    except Exception as e:
+        print(f"keywords error: {e}")
+        return {"top_keywords": [], "bottom_keywords": [], "status": "failed"}
+
 #Pick best answer and summarize the opinion from answers of each models
 def analyze_result(results, mode):
     loop = asyncio.new_event_loop()
@@ -490,12 +625,13 @@ def analyze_result(results, mode):
     print(results)
     summarize = loop.run_until_complete(asyncio.gather(
         get_best_answer(results),
-        get_opinion(results, mode)
+        get_opinion(results, mode),
+        get_keywords(results)  
     ))
-    best_answer, opinion = summarize
+    best_answer, opinion, keywords = summarize
     loop.close()
     print("\n------------END ANALYZE RESULT------------\n", int(time.time()))
-    return best_answer, opinion
+    return best_answer, opinion, keywords
 
 #Generate answer of user asked(findal_answer: main answer, status_report: AI models success report, opinion: summarized opinion)
 def get_answer(mode, level, history, prompt, question):
@@ -504,10 +640,10 @@ def get_answer(mode, level, history, prompt, question):
         {key: value for key, value in result.items() if key != 'answer'}
         for result in results
     ]
-    best_answer, opinion = analyze_result(results, mode)
+    best_answer, opinion, keywords = analyze_result(results, mode)
 
     if mode == 'consensus':
-        final_answer_with_images = insert_images(best_answer, question)
+        final_answer_with_images = insert_images(best_answer, question, keywords)
     if mode == 'blaze':
         final_answer_with_images = best_answer
 
@@ -541,44 +677,73 @@ def format_bottom_image(img_data):
     </div>
     """
 
-def insert_images(answer_text, query):
+def insert_images(answer_text, query, keywords):
     """
     Insert only 2 relevant images into the answer text:
-    - 1 big image at the top
-    - 1 big centered image at the bottom
+    - 1 big image at the top (from top_keywords candidates)
+    - 1 big centered image at the bottom (from bottom_keywords candidates)
+    **Rules**
+    - Always insert correct images related to the content
+    - 2 images must be different
     """
-    paragraphs = [p.strip() for p in re.split(r'(?<=\n\n)(?=\S)', answer_text) if p.strip()]
+    paragraphs = [p.strip() for p in re.split(r'(?<=\n\n)(?=\S)', answer_text or '') if p.strip()]
     if not paragraphs:
-        return answer_text
+        paragraphs = [answer_text or ""]
 
-    # Fetch top and bottom images
+    # Safely read keyword arrays
+    kw = keywords or {}
+    top_kw = kw.get('top_keywords') or []
+    bottom_kw = kw.get('bottom_keywords') or []
+
+    # Build candidate queries (use a few best items)
+    # Prepend the original query for extra context
+    top_queries = [f"{query} {k}".strip() for k in top_kw][:5]
+    bottom_queries = [f"{query} {k}".strip() for k in bottom_kw][:5]
+
+    if not top_queries and not bottom_queries:
+        # No keywords; just return original text
+        return "\n\n".join(paragraphs)
+
+    # Fetch images concurrently and pick the first valid from each group
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    
     try:
-        # Get two different image queries to increase variety
-        queries = [
-            f"{query} high quality",
-            f"{query} detailed"
-        ]
-        tasks = [fetch_image(q) for q in queries[:2]]
-        images = loop.run_until_complete(asyncio.gather(*tasks))
+        top_tasks = [fetch_image(q) for q in top_queries] if top_queries else []
+        bottom_tasks = [fetch_image(q) for q in bottom_queries] if bottom_queries else []
+
+        top_results, bottom_results = loop.run_until_complete(asyncio.gather(
+            asyncio.gather(*top_tasks) if top_tasks else asyncio.sleep(0, result=[]),
+            asyncio.gather(*bottom_tasks) if bottom_tasks else asyncio.sleep(0, result=[])
+        ))
     finally:
         loop.close()
 
-    # Build the final content with images
+    def first_image(cands):
+        for c in cands:
+            if isinstance(c, dict) and c:
+                return c
+        return None
+
+    top_img = first_image(top_results)
+    bottom_img = first_image(bottom_results)
+
+    # Avoid using the same image twice (compare by URL/thumbnail)
+    if top_img and bottom_img:
+        top_url = top_img.get("thumbnail") or top_img.get("url")
+        bot_url = bottom_img.get("thumbnail") or bottom_img.get("url")
+        if top_url and bot_url and top_url == bot_url:
+            # Try to find a different bottom image
+            bottom_img = first_image([c for c in bottom_results if c and (c.get("thumbnail") or c.get("url")) != top_url])
+
+    # Build the final content
     results = []
-    
-    # Insert top image if available
-    if images and len(images) > 0 and images[0]:
-        results.append(format_top_image(images[0]))
-    
-    # Add all paragraphs
+    if top_img:
+        results.append(format_top_image(top_img))
+
     results.extend(paragraphs)
-    
-    # Insert bottom image if available
-    if images and len(images) > 1 and images[1]:
-        results.append(format_bottom_image(images[1]))
+
+    if bottom_img:
+        results.append(format_bottom_image(bottom_img))
 
     return "\n\n".join(results)
 
@@ -786,14 +951,14 @@ def get_news(mode, level, query):
         {key: value for key, value in result.items() if key != 'answer'}
         for result in results
     ]
-    best_answer, opinion = analyze_result(results, mode)
+    best_answer, opinion, keywords = analyze_result(results, mode)
 
     if mode == 'consensus':
-        final_answer_with_images = insert_images(best_answer, query)
+        final_answer = insert_images(best_answer, query, keywords)
     if mode == 'blaze':
-        final_answer_with_images = best_answer
+        final_answer = best_answer
     return {
-        "final_answer": final_answer_with_images,
+        "final_answer": final_answer,
         "status_report": status_report,
         "opinion": opinion
     }
@@ -906,9 +1071,21 @@ def judge_system(mode, question, history = []):
 
         5. **Product Intent Detection**:  
 
-        Determine whether the user is inquiring about a **buyable consumer product** such as clothing, electronics, tools, or household goods.  
-        - If yes, extract the product names mentioned in the query and return them in a list.  
-        - If no products are found, return an empty list `[]`.
+            You MUST extract all explicitly mentioned buyable consumer products and close paraphrases (brand + model/family), including ALL sides of any comparison, “worth buying X if you have Y”, or “X vs Y” constructions.
+            
+            Rules:
+            - Include every product explicitly named or strongly implied as a concrete retail item.
+            - Include all sides of comparisons or conditional questions (e.g., “Is X worth it if I have Y?” → extract both X and Y).
+            - For different types of products (e.g., “X vs Y” → extract both X and Y).
+            - Keep names as they appear (brand + model), but be consistent and concise (e.g., “PlayStation 5”, “Nintendo Switch 2”).
+            - Do NOT include vague categories (e.g., “a console”, “a controller”) unless a specific retail product is named.
+            - Deduplicate. Be case-insensitive.
+
+            Return an array. If none, return [].
+
+            Normalization/Aliases (non-exhaustive examples the model should recognize as the same products):
+            - PlayStation 5 ≡ PS5
+            - Nintendo Switch 2 ≡ Switch 2, Nintendo Switch (2nd gen)
 
         Return your answer strictly in the following JSON format: {expected_output}
 
@@ -991,21 +1168,108 @@ def ask():
 
     # return jsonify({"level": "subscribe"})
     prompt = f"""
+You are a knowledgeable and objective AI assistant.  
+Your primary task is to generate answers that are clear, accurate, and helpful in natural language.  
+Every response should feel complete, structured, and directly useful to the user.  
 
-    You are a knowledgeable and objective AI assistant. Your task is to generate a clear, accurate, and helpful answer based solely on your understanding of the topic.
-    Please carefully read the question below and provide a detailed, well-structured response in natural language.
-    If the question involves comparing multiple products, technologies, or concepts, ensure that you:
-    - Identify all items being compared.
-    - Explain the key features, advantages, and limitations of each.
-    - Highlight meaningful differences and suggest when one may be more suitable than another.
-    - Use bullet points, tables, or clear formatting to improve readability.
-    - If there are products, you have to provide the details about the best products in answer.
-    - Recommend Products: '''---PRODUCTS---''' If there is the data in Recommend Products, search the recommend the products, and give and explain as Rank 1 for each product.
-    
-    Avoid including disclaimers such as "as of my last update." Focus on delivering useful, confident information without referencing time limitations.
-    And about answers and news, you have not to mention source that you got the new data.
-    You have to provide accurate and detailed answers while satisfying the conditions above.
-    IMPORTANT: If asked about any, you MUST generate the complete report with all standard sections (Introduction, Methods, Results, Discussion, Conclusion, References). Do not stop mid-report."
+=========================
+GENERAL RULES  
+=========================
+- Always provide the latest and most up-to-date information available at the time of answering.  
+- Use clear formatting: headings, subheadings, bullet points, numbered steps, and tables where appropriate.  
+- Always provide **actionable guidance or decisions**, not just summaries.  
+- Do not use filler phrases like “as of my last update.”  
+- Keep answers concise but **fully complete** — no missing details.  
+- Ensure all facts are **100% correct**.  
+- Always include the **latest events, changes, or updates** relevant to the question.  
+- If something is uncertain or context-dependent, explain the possible cases and give practical recommendations.  
+- Always observe and analyze all relevant issues from the perspective of the current moment, ensuring that the information reflects the most up-to-date context available at the time of answering.
+- If possible, provide final conclusions or recommendations based on the information provided.
+=========================
+COMPARISON QUESTIONS  
+=========================
+When comparing products, technologies, or concepts:  
+1. Identify all items clearly, and add any important missing options.  
+2. For each item, explain:  
+   - What it is / Key features  
+   - Strengths (advantages)  
+   - Limitations (trade-offs)  
+   - Best-fit use cases (who should use it and why)  
+3. Highlight the **meaningful differences** between items (performance, ecosystem, cost, usability, compliance, learning curve, etc.).  
+4. Provide a short **decision guide** that explains when to choose which option.  
+5. If helpful, include a **comparison table** for clarity.  
+
+=========================
+PRODUCT RECOMMENDATIONS  
+=========================
+- Always include **exact models or versions**, standout features, typical price range, and any known caveats.  
+- If the prompt includes the pattern:  
+  `Recommend Products: ---PRODUCTS---`  
+  Then follow these rules:  
+  - Treat each listed product as **Rank 1** in its own category.  
+  - Explain why it deserves Rank 1 (unique strengths, ideal user).  
+  - Suggest **Rank 2 and Rank 3 alternatives** for different budgets or needs.  
+- Provide practical buying advice and considerations (e.g., warranty, ecosystem, compatibility).  
+- Always provide correct products the user intends.
+
+=========================
+HOW-TO & TROUBLESHOOTING  
+=========================
+When explaining processes or fixing problems:  
+- Start with a short **overview** of the goal.  
+- List **prerequisites** (tools, versions, permissions, environment).  
+- Provide a **step-by-step numbered guide**.  
+- Add a way to **verify success** at the end of the steps.  
+- Mention **common pitfalls or mistakes** and how to fix them.  
+- End with **optional improvements or next steps** the user can take.  
+
+=========================
+DEFINITIONS & CONCEPTS  
+=========================
+When defining or explaining a concept:  
+- Give a **one-sentence definition**.  
+- Explain **why it matters / its practical relevance**.  
+- Provide **one simple, relatable example**.  
+- Mention **related terms** and explain how they differ.  
+
+=========================
+NEWS & TIME-SENSITIVE TOPICS  
+=========================
+When the topic involves recent events or fast-changing information:  
+- Provide the **latest confirmed updates with exact dates** (e.g., “On 2 September 2025…”).  
+- Explain clearly **what changed** and **why it matters**.  
+- Summarize the **impact or implications** of these updates.  
+- End with a short **“What's next / possible outcomes”** section.  
+
+=========================
+FULL REPORT MODE  
+=========================
+If the user explicitly requests a full/academic report, always include:  
+1. **Introduction** - context, background, objectives.  
+2. **Methods** - data sources, assumptions, evaluation criteria, analysis steps.  
+3. **Results** - findings (tables or figures if useful).  
+4. **Discussion** - interpretation, trade-offs, limitations, and alternative views.  
+5. **Conclusion** - key takeaways and recommended actions.  
+6. **References** - concise, relevant sources (include only if report mode or explicitly required).  
+
+=========================
+STYLE & TONE  
+=========================
+- Neutral, professional, and **user-friendly**.  
+- Use plain, everyday English — avoid unnecessary jargon.  
+- Structure text with short paragraphs, clear bullets, and compact tables.  
+- Always focus on clarity and usability over complexity.  
+
+=========================
+CHECKLIST BEFORE FINALIZING  
+=========================
+- Is the answer up-to-date with the latest events and details?  
+- Are all facts accurate and double-checked?  
+- Is the response concise but **fully complete**?  
+- Does it provide actionable guidance?  
+- Is it clear, well-structured, and easy to read?  
+- Does it completely cover the user's intent?  
+
     """
 
     print(prompt)
@@ -1015,12 +1279,13 @@ def ask():
         history = []
     else:
         question = judge_output['updated_question']
-    print("Judge_output")
+    print("Judge_output", len(judge_output['product']))
     print(int(time.time()))
     print(judge_output)
 
     if len(judge_output['product']) > 0:
         if mode == 'consensus':
+            random.shuffle(judge_output['product'])
             judge_output['level'], result = analyze_product(mode, judge_output['level'], judge_output['last_year'], history, prompt, question)
     elif judge_output['last_year'] == 'Yes':
         print("getting news", int(time.time()))
@@ -1089,6 +1354,65 @@ async def get_product(query):
     except Exception as e:
         raise RuntimeError(f"Searching product failed: {str(e)}")
 
+def _norm(s: str) -> str:
+    return re.sub(r"\s+", " ", str(s or "")).strip().lower()
+
+def _product_key(p: dict):
+    """
+    Prefer stable ID; else fallback to normalized title/name.
+    """
+    if isinstance(p, dict):
+        if p.get("id"):
+            return ("id", _norm(p["id"]))
+        title = p.get("title") or p.get("name") or p.get("product")
+        if title:
+            return ("title", _norm(title))
+    # last resort: stable hash of the dict
+    return ("blob", _norm(json.dumps(p, sort_keys=True, ensure_ascii=False)))
+
+def _merge(a: dict, b: dict) -> dict:
+    """
+    Shallow merge: keep existing non-empty values in `a`,
+    fill missing/empty fields from `b`.
+    """
+    out = dict(a)
+    for k, v in b.items():
+        if k not in out or out[k] in (None, "", [], {}):
+            out[k] = v
+    return out
+
+def combine_product_results(product_results):
+    """
+    product_results is typically a list where each item is either:
+      - a list[dict] (preferred), or
+      - a single dict, or
+      - None
+    Returns: list[dict] flattened, deduped, original order preserved.
+    """
+    # 1) Flatten
+    flat = []
+    for chunk in product_results:
+        if not chunk:
+            continue
+        if isinstance(chunk, list):
+            flat.extend([x for x in chunk if x])
+        elif isinstance(chunk, dict):
+            flat.append(chunk)
+        else:
+            # ignore unexpected shapes
+            continue
+
+    # 2) Deduplicate + stable order, merging fields when duplicates appear
+    seen = OrderedDict()
+    for p in flat:
+        key = _product_key(p)
+        if key in seen:
+            seen[key] = _merge(seen[key], p)
+        else:
+            seen[key] = p
+
+    return list(seen.values())
+
 #Generate answer of user asked question and search products mentioned in user asked question.
 #If last_year: Yes, get news and analyze news with AI models 3/5/7. After that combine answer and searched products.
 #IF last_year: No, generate answer with AI models 3/5/7. After that combine answer and searched products.
@@ -1096,16 +1420,23 @@ def compare_product(mode, level, last_year, history, prompt, query, products):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
+    # Kick off product fetches
     product_tasks = [get_product(product) for product in products]
-
     product_results = loop.run_until_complete(asyncio.gather(*product_tasks))
 
     print("--------Product tasks----------")
-    # print(product_results)
-    prompt = prompt.replace("---PRODUCTS---", json.dumps(product_results))
+    # Combine ALL product results here
+    product_data = combine_product_results(product_results)
+
+    # shuffle product_data
+    random.shuffle(product_data)
+
+    # Inject combined products into the prompt (instead of raw product_results)
+    prompt = prompt.replace("---PRODUCTS---", json.dumps(product_data, ensure_ascii=False))
     print("----------Adjust Prompt-----------")
     print(prompt)
-    # Run generate_answer and all product fetches concurrently
+
+    # Run analysis
     if last_year.lower() == 'yes':
         analyze = loop.run_until_complete(asyncio.gather(
             search_news(mode, level, query),
@@ -1117,26 +1448,17 @@ def compare_product(mode, level, last_year, history, prompt, query, products):
     result = analyze[0]
     loop.close()
 
-    # Flatten product_results (each is a list)
-    print("------------PRODUCT_RESULTS------------")
-    # print(product_results)
-    product_data = product_results[0]
-    print("---------Fianl Product ---data")
-    # print(product_data)
-    # Set correct titles
-    # for i, product in enumerate(product_data):
-    #     product["title"] = products[i]
-
     answer = result["final_answer"]
-    print("----------Products----------")
+
+    print("------------PRODUCT_RESULTS (combined)------------")
     # print(product_data)
+
     result["final_answer"] = json.dumps({
         "answer": answer,
         "products": product_data
-    })
+    }, ensure_ascii=False)
 
     return result
-
 #This function will called if user asked question with products. Generate the answer of user asked question.
 #If user just want only looking products search products and return.
 #If user want product's analyzed data, compared data, review and etc, Combine analyzed data with AI answers and products list.
@@ -1338,7 +1660,7 @@ def search_product(query):
 
     results = results.get("shopping_results", [])
     print("---------Search Shopping Results---------")
-    print(results)
+    print(results[1:5])
     min_price = to_float(info.get('min_price'))
     max_price = to_float(info.get('max_price'))
 
